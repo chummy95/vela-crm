@@ -1,0 +1,95 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function ownsIncomingRecord() {
+      return signedIn() && request.resource.data.user_id == request.auth.uid;
+    }
+
+    function ownsExistingRecord() {
+      return signedIn() && resource.data.user_id == request.auth.uid;
+    }
+
+    function keepsOwnership() {
+      return request.resource.data.user_id == request.auth.uid
+        && request.resource.data.user_id == resource.data.user_id;
+    }
+
+    function publicFormTargetExists() {
+      return request.resource.data.user_id is string
+        && request.resource.data.user_id.size() > 0
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.user_id));
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create, update, delete: if isOwner(userId);
+    }
+
+    match /clients/{docId} {
+      allow create: if ownsIncomingRecord();
+      allow get, list: if ownsExistingRecord();
+      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+    }
+
+    match /projects/{docId} {
+      allow create: if ownsIncomingRecord();
+      allow get, list: if ownsExistingRecord();
+      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+    }
+
+    match /invoices/{docId} {
+      allow create: if ownsIncomingRecord();
+      allow get, list: if ownsExistingRecord();
+      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+    }
+
+    match /proposals/{docId} {
+      allow create: if ownsIncomingRecord();
+      allow get, list: if ownsExistingRecord();
+      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+    }
+
+    match /contracts/{docId} {
+      allow create: if ownsIncomingRecord();
+      allow get, list: if ownsExistingRecord();
+      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+    }
+
+    match /events/{docId} {
+      allow create: if ownsIncomingRecord();
+      allow get, list: if ownsExistingRecord();
+      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+    }
+
+    match /messages/{docId} {
+      allow create: if ownsIncomingRecord();
+      allow get, list: if ownsExistingRecord();
+      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+    }
+
+    match /form_configs/{userId} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update, delete: if isOwner(userId) && request.resource.data.user_id == request.auth.uid;
+    }
+
+    match /form_submissions/{docId} {
+      allow create: if publicFormTargetExists()
+        && request.resource.data.data is map
+        && request.resource.data.submitted_at is string
+        && request.resource.data.keys().hasOnly(['user_id', 'data', 'submitted_at']);
+      allow get, list: if ownsExistingRecord();
+      allow update, delete: if false;
+    }
+  }
+}
