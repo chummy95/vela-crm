@@ -1,0 +1,11 @@
+const express = require('express');
+const router = express.Router();
+const c = require('../controllers/projectsController');
+router.get('/', c.list);
+router.post('/', c.create);
+router.get('/:id', c.get);
+router.put('/:id', c.update);
+router.patch('/:id/stage', c.advanceStage);
+router.post('/:id/files', c.addFile);
+router.post('/:id/signoff', c.signOff);
+module.exports = router;
