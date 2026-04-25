@@ -55,6 +55,20 @@ function compareEventSchedule(a, b) {
   return left - right;
 }
 
+function toStringList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => text(item)).filter(Boolean);
+  }
+  return text(value)
+    .split('\n')
+    .map((item) => text(item))
+    .filter(Boolean);
+}
+
+function stripUndefinedValues(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
+}
+
 function requireUser() {
   ensureFirebaseConfigured();
   if (!auth?.currentUser) {
@@ -90,8 +104,11 @@ async function listOwnedDocs(collectionName) {
   return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
 }
 
-function stripUndefinedValues(value) {
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
+async function deleteOwnedDoc(collectionName, id) {
+  const user = requireUser();
+  await getOwnedDoc(collectionName, id, user.uid);
+  await deleteDoc(doc(db, collectionName, id));
+  return { success: true };
 }
 
 function buildThreadList(messages) {
@@ -105,6 +122,8 @@ function buildThreadList(messages) {
           client_id: message.client_id,
           client_name: message.client_name || 'Unknown client',
           color: message.color || '#1B2B4B',
+          latest_message: message.text || '',
+          latest_at: message.sent_at || '',
         });
       }
     });
@@ -216,10 +235,7 @@ export const clientsAPI = {
   },
 
   async remove(id) {
-    const user = requireUser();
-    await getOwnedDoc('clients', id, user.uid);
-    await deleteDoc(doc(db, 'clients', id));
-    return { success: true };
+    return deleteOwnedDoc('clients', id);
   },
 };
 
@@ -270,8 +286,12 @@ export const projectsAPI = {
 
   async update(id, body) {
     const user = requireUser();
-    await getOwnedDoc('projects', id, user.uid);
+    const current = await getOwnedDoc('projects', id, user.uid);
+    const client = body.client_id ? await getOwnedDoc('clients', body.client_id, user.uid) : null;
     const payload = stripUndefinedValues({
+      client_id: body.client_id !== undefined ? client?.id || current.client_id : undefined,
+      client_name: body.client_id !== undefined ? client?.name || current.client_name : undefined,
+      client_color: body.client_id !== undefined ? client?.color || current.client_color : undefined,
       service: body.service !== undefined ? text(body.service) : undefined,
       value: body.value !== undefined ? text(body.value) : undefined,
       start_date: body.start_date !== undefined ? text(body.start_date) : undefined,
@@ -327,6 +347,10 @@ export const projectsAPI = {
     await updateDoc(doc(db, 'projects', id), { signoffs: nextSignoffs });
     return { success: true, stage_index: normalizedStageIndex };
   },
+
+  async remove(id) {
+    return deleteOwnedDoc('projects', id);
+  },
 };
 
 export const invoicesAPI = {
@@ -342,7 +366,8 @@ export const invoicesAPI = {
 
   async create(body) {
     const user = requireUser();
-    if (!body.client_id || !text(body.amount)) {
+    const amount = text(body.amount);
+    if (!body.client_id || !amount) {
       throw new Error('Client and amount are required.');
     }
 
@@ -353,14 +378,31 @@ export const invoicesAPI = {
       client_name: client.name,
       project_id: text(body.project_id),
       description: text(body.description),
-      amount: text(body.amount),
+      amount,
       due_date: text(body.due_date),
-      status: 'unpaid',
+      status: text(body.status) || 'unpaid',
       created_at: now(),
     };
 
     const reference = await addDoc(collection(db, 'invoices'), payload);
     return { id: reference.id, ...payload };
+  },
+
+  async update(id, body) {
+    const user = requireUser();
+    const current = await getOwnedDoc('invoices', id, user.uid);
+    const client = body.client_id ? await getOwnedDoc('clients', body.client_id, user.uid) : null;
+    const payload = stripUndefinedValues({
+      client_id: body.client_id !== undefined ? client?.id || current.client_id : undefined,
+      client_name: body.client_id !== undefined ? client?.name || current.client_name : undefined,
+      project_id: body.project_id !== undefined ? text(body.project_id) : undefined,
+      description: body.description !== undefined ? text(body.description) : undefined,
+      amount: body.amount !== undefined ? text(body.amount) : undefined,
+      due_date: body.due_date !== undefined ? text(body.due_date) : undefined,
+      status: body.status !== undefined ? text(body.status) : undefined,
+    });
+    await updateDoc(doc(db, 'invoices', id), payload);
+    return getOwnedDoc('invoices', id, user.uid);
   },
 
   async updateStatus(id, status) {
@@ -372,6 +414,10 @@ export const invoicesAPI = {
     }
     await updateDoc(doc(db, 'invoices', id), { status: nextStatus });
     return { success: true, status: nextStatus };
+  },
+
+  async remove(id) {
+    return deleteOwnedDoc('invoices', id);
   },
 };
 
@@ -406,9 +452,9 @@ export const proposalsAPI = {
       accent_color: text(body.accent_color) || '#C9A84C',
       intro: text(body.intro),
       overview: text(body.overview),
-      packages: Array.isArray(body.packages) ? body.packages : [],
-      deliverables: Array.isArray(body.deliverables) ? body.deliverables : [],
-      timeline: Array.isArray(body.timeline) ? body.timeline : [],
+      packages: toStringList(body.packages),
+      deliverables: toStringList(body.deliverables),
+      timeline: toStringList(body.timeline),
       terms: text(body.terms),
       process: text(body.process),
       status: text(body.status) || 'draft',
@@ -433,15 +479,19 @@ export const proposalsAPI = {
       accent_color: body.accent_color !== undefined ? text(body.accent_color) : undefined,
       intro: body.intro !== undefined ? text(body.intro) : undefined,
       overview: body.overview !== undefined ? text(body.overview) : undefined,
-      packages: body.packages !== undefined ? (Array.isArray(body.packages) ? body.packages : []) : undefined,
-      deliverables: body.deliverables !== undefined ? (Array.isArray(body.deliverables) ? body.deliverables : []) : undefined,
-      timeline: body.timeline !== undefined ? (Array.isArray(body.timeline) ? body.timeline : []) : undefined,
+      packages: body.packages !== undefined ? toStringList(body.packages) : undefined,
+      deliverables: body.deliverables !== undefined ? toStringList(body.deliverables) : undefined,
+      timeline: body.timeline !== undefined ? toStringList(body.timeline) : undefined,
       terms: body.terms !== undefined ? text(body.terms) : undefined,
       process: body.process !== undefined ? text(body.process) : undefined,
       status: body.status !== undefined ? text(body.status) : undefined,
     });
     await updateDoc(doc(db, 'proposals', id), payload);
-    return { success: true };
+    return getOwnedDoc('proposals', id, user.uid);
+  },
+
+  async remove(id) {
+    return deleteOwnedDoc('proposals', id);
   },
 };
 
@@ -502,9 +552,10 @@ export const contractsAPI = {
       primary_color: body.primary_color !== undefined ? text(body.primary_color) : undefined,
       accent_color: body.accent_color !== undefined ? text(body.accent_color) : undefined,
       clauses: body.clauses !== undefined ? (Array.isArray(body.clauses) ? body.clauses : []) : undefined,
+      signed: body.signed !== undefined ? Boolean(body.signed) : undefined,
     });
     await updateDoc(doc(db, 'contracts', id), payload);
-    return { success: true };
+    return getOwnedDoc('contracts', id, user.uid);
   },
 
   async sign(id) {
@@ -513,12 +564,21 @@ export const contractsAPI = {
     await updateDoc(doc(db, 'contracts', id), { signed: true });
     return { success: true };
   },
+
+  async remove(id) {
+    return deleteOwnedDoc('contracts', id);
+  },
 };
 
 export const eventsAPI = {
   async list() {
     const rows = await listOwnedDocs('events');
     return rows.sort(compareEventSchedule);
+  },
+
+  async get(id) {
+    const user = requireUser();
+    return getOwnedDoc('events', id, user.uid);
   },
 
   async create(body) {
@@ -545,11 +605,27 @@ export const eventsAPI = {
     return { id: reference.id, ...payload };
   },
 
-  async remove(id) {
+  async update(id, body) {
     const user = requireUser();
     await getOwnedDoc('events', id, user.uid);
-    await deleteDoc(doc(db, 'events', id));
-    return { success: true };
+    const client = body.client_id ? await getOwnedDoc('clients', body.client_id, user.uid) : null;
+    const payload = stripUndefinedValues({
+      client_id: body.client_id !== undefined ? client?.id || '' : undefined,
+      client_name: body.client_id !== undefined ? client?.name || '' : undefined,
+      title: body.title !== undefined ? text(body.title) : undefined,
+      event_type: body.event_type !== undefined ? text(body.event_type) : undefined,
+      date: body.date !== undefined ? text(body.date) : undefined,
+      time: body.time !== undefined ? text(body.time) : undefined,
+      duration: body.duration !== undefined ? text(body.duration) : undefined,
+      meeting_link: body.meeting_link !== undefined ? text(body.meeting_link) : undefined,
+      color: body.client_id !== undefined ? client?.color || '#3B82F6' : undefined,
+    });
+    await updateDoc(doc(db, 'events', id), payload);
+    return getOwnedDoc('events', id, user.uid);
+  },
+
+  async remove(id) {
+    return deleteOwnedDoc('events', id);
   },
 };
 
@@ -565,13 +641,17 @@ export const formsAPI = {
 
   async saveFields(fields) {
     const user = requireUser();
-    const payload = fields.map((field, index) => ({
-      label: text(field.label),
-      field_type: text(field.field_type) || 'text',
-      required: field.required ? 1 : 0,
-      options: Array.isArray(field.options) ? field.options.map((option) => text(option)).filter(Boolean).join(',') : text(field.options),
-      sort_order: index,
-    })).filter((field) => field.label);
+    const payload = fields
+      .map((field, index) => ({
+        label: text(field.label),
+        field_type: text(field.field_type) || 'text',
+        required: field.required ? 1 : 0,
+        options: Array.isArray(field.options)
+          ? field.options.map((option) => text(option)).filter(Boolean).join(',')
+          : text(field.options),
+        sort_order: index,
+      }))
+      .filter((field) => field.label);
 
     await setDoc(doc(db, 'form_configs', user.uid), {
       user_id: user.uid,
@@ -579,7 +659,7 @@ export const formsAPI = {
       updated_at: now(),
     });
 
-    return { success: true };
+    return { success: true, fields: payload };
   },
 
   async submissions() {
@@ -634,13 +714,17 @@ export const analyticsAPI = {
     const byServiceMap = new Map();
 
     projects.forEach((project) => {
-      byServiceMap.set(project.service, (byServiceMap.get(project.service) || 0) + 1);
+      byServiceMap.set(project.service || 'Uncategorised', (byServiceMap.get(project.service || 'Uncategorised') || 0) + 1);
     });
 
     return {
       invoices: paidInvoices,
       byService: Array.from(byServiceMap.entries()).map(([service, count]) => ({ service, count })),
       months,
+      totalPaid: paidInvoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0),
+      totalOutstanding: invoices
+        .filter((invoice) => invoice.status !== 'paid')
+        .reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0),
     };
   },
 
@@ -656,6 +740,7 @@ export const analyticsAPI = {
       enquiries: submissions.length,
       proposals_sent: proposals.length,
       contracts_signed: contracts.filter((contract) => contract.signed).length,
+      active_projects: projects.filter((project) => project.status === 'active').length,
       delivered: projects.filter((project) => project.status === 'delivered').length,
     };
   },

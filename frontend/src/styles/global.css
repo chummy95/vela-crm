@@ -36,7 +36,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--card); color: var(-
 .bsm { padding: 6px 11px; font-size: 11.5px; }
 .bxs { padding: 3px 8px; font-size: 11px; }
 .content { flex: 1; overflow-y: auto; padding: 20px; background: var(--card); }
-.stat-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 20px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
 .stat-card { background: var(--white); border-radius: 11px; border: 1px solid var(--border); padding: 16px 18px; cursor: pointer; transition: all .2s; }
 .stat-card:hover { box-shadow: 0 4px 18px rgba(27,43,75,.09); transform: translateY(-1px); }
 .stat-val { font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
@@ -57,7 +57,7 @@ textarea.fi { resize: vertical; min-height: 66px; line-height: 1.6; }
 .fsel { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237A8BA6' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
 .fi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .mo { position: fixed; inset: 0; background: rgba(27,43,75,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
-.md { background: #fff; border-radius: 13px; width: 480px; max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(27,43,75,.2); }
+.md { background: #fff; border-radius: 13px; width: min(860px, calc(100vw - 32px)); max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(27,43,75,.2); }
 .mh { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
 .mt { font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 600; color: var(--navy); }
 .mc { width: 24px; height: 24px; border-radius: 6px; background: var(--card); border: none; cursor: pointer; font-size: 11px; color: var(--text-s); }
@@ -69,3 +69,7 @@ textarea.fi { resize: vertical; min-height: 66px; line-height: 1.6; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .fade { animation: fadeUp .2s ease forwards; }
+
+@media (max-width: 1100px) {
+  .fi-row { grid-template-columns: 1fr; }
+}

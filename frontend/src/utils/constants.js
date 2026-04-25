@@ -19,6 +19,7 @@ export const STATUS_COLORS = {
   unpaid:    { bg: 'var(--warn-bg)',   color: 'var(--warn)' },
   active:    { bg: 'var(--blue-bg)',   color: 'var(--blue)' },
   pending:   { bg: 'var(--warn-bg)',   color: 'var(--warn)' },
+  delivered: { bg: 'var(--navy-pale)', color: 'var(--navy)' },
   completed: { bg: 'var(--ok-bg)',     color: 'var(--ok)'   },
 };
 
