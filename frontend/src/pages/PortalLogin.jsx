@@ -45,12 +45,12 @@ export default function PortalLogin() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, var(--navy), #314976)' }}>
-      <div style={{ background: '#fff', borderRadius: '18px', padding: '40px', width: '420px', boxShadow: '0 24px 60px rgba(0,0,0,.22)' }}>
+      <div className="auth-card" style={{ background: '#fff', borderRadius: '18px', padding: '40px', width: '420px', boxShadow: '0 24px 60px rgba(0,0,0,.22)' }}>
         <BrandLogo variant="blueTagline" width={126} alt="Vela client portal" style={{ margin: '0 auto 14px' }} />
-        <div style={{ fontFamily: 'var(--font-heading)', fontSize: '24px', fontWeight: 700, color: 'var(--navy)', marginBottom: '6px' }}>
+        <div style={{ fontFamily: 'var(--font-heading)', fontSize: '24px', fontWeight: 700, color: 'var(--brand-blue)', marginBottom: '6px' }}>
           Client Portal
         </div>
-        <div style={{ fontSize: '13px', color: 'var(--text-s)', marginBottom: '28px' }}>
+        <div className="auth-copy" style={{ fontSize: '13px', marginBottom: '28px' }}>
           Sign in to review your project progress, invoices, documents, and messages.
         </div>
 
@@ -78,7 +78,7 @@ export default function PortalLogin() {
             <button
               type="button"
               onClick={handleResetPassword}
-              style={{ background: 'none', border: 'none', padding: 0, color: 'var(--navy)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+              style={{ background: 'none', border: 'none', padding: 0, color: 'var(--brand-blue)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
               disabled={loading}
             >
               Forgot password?
@@ -89,8 +89,8 @@ export default function PortalLogin() {
           </button>
         </form>
 
-        <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '12px', color: 'var(--text-s)' }}>
-          Studio owner? <span style={{ color: 'var(--navy)', fontWeight: 600, cursor: 'pointer' }} onClick={() => navigate('/login')}>Return to studio login</span>
+        <div className="auth-link-row" style={{ marginTop: '16px', textAlign: 'center', fontSize: '12px' }}>
+          Studio owner? <span style={{ color: 'var(--brand-blue)', fontWeight: 600, cursor: 'pointer' }} onClick={() => navigate('/login')}>Return to studio login</span>
         </div>
       </div>
     </div>

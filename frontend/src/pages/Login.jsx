@@ -47,9 +47,9 @@ export default function Login() {
 
   return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--navy)' }}>
-      <div style={{ background:'#fff', borderRadius:'16px', padding:'40px', width:'400px', boxShadow:'0 24px 60px rgba(0,0,0,.25)' }}>
+      <div className="auth-card" style={{ background:'#fff', borderRadius:'16px', padding:'40px', width:'400px', boxShadow:'0 24px 60px rgba(0,0,0,.25)' }}>
         <BrandLogo variant="blueTagline" width={126} alt="Vela CRM" style={{ margin:'0 auto 14px' }} />
-        <div style={{ fontSize:'13px', color:'var(--text-s)', marginBottom:'28px' }}>
+        <div className="auth-copy" style={{ fontSize:'13px', marginBottom:'28px' }}>
           {mode === 'login' ? 'Welcome back' : 'Create your studio account'}
         </div>
 
@@ -68,7 +68,7 @@ export default function Login() {
               <button
                 type="button"
                 onClick={handleResetPassword}
-                style={{ background:'none', border:'none', padding:0, color:'var(--navy)', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
+                style={{ background:'none', border:'none', padding:0, color:'var(--brand-blue)', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
                 disabled={loading}
               >
                 Forgot password?
@@ -80,15 +80,15 @@ export default function Login() {
           </button>
         </form>
 
-        <div style={{ marginTop:'16px', textAlign:'center', fontSize:'13px', color:'var(--text-s)' }}>
-          {mode === 'login' ? <>No account? <span style={{ color:'var(--navy)', fontWeight:600, cursor:'pointer' }} onClick={()=>{ setMode('register'); setError(''); setNotice(''); }}>Sign up</span></> : <>Have an account? <span style={{ color:'var(--navy)', fontWeight:600, cursor:'pointer' }} onClick={()=>{ setMode('login'); setError(''); setNotice(''); }}>Sign in</span></>}
+        <div className="auth-link-row" style={{ marginTop:'16px', textAlign:'center', fontSize:'13px' }}>
+          {mode === 'login' ? <>No account? <span style={{ color:'var(--brand-blue)', fontWeight:600, cursor:'pointer' }} onClick={()=>{ setMode('register'); setError(''); setNotice(''); }}>Sign up</span></> : <>Have an account? <span style={{ color:'var(--brand-blue)', fontWeight:600, cursor:'pointer' }} onClick={()=>{ setMode('login'); setError(''); setNotice(''); }}>Sign in</span></>}
         </div>
 
-        <div style={{ marginTop:'12px', textAlign:'center', fontSize:'12px', color:'var(--text-s)' }}>
-          Client access? <span style={{ color:'var(--navy)', fontWeight:600, cursor:'pointer' }} onClick={() => navigate('/portal/login')}>Open client portal</span>
+        <div className="auth-link-row" style={{ marginTop:'12px', textAlign:'center', fontSize:'12px' }}>
+          Client access? <span style={{ color:'var(--brand-blue)', fontWeight:600, cursor:'pointer' }} onClick={() => navigate('/portal/login')}>Open client portal</span>
         </div>
 
-        <div style={{ marginTop:'16px', padding:'12px', background:'var(--card)', borderRadius:'8px', fontSize:'11.5px', color:'var(--text-s)' }}>
+        <div className="auth-note" style={{ marginTop:'16px', padding:'12px', background:'var(--card)', borderRadius:'8px', fontSize:'11.5px' }}>
           Studio owners sign in here. Client portal accounts use a separate login linked to the same Firebase project.
         </div>
       </div>
