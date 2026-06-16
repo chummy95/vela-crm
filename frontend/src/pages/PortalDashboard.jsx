@@ -85,7 +85,7 @@ export default function PortalDashboard() {
         {error && <div className="card" style={{ padding: 16, color: 'var(--err)' }}>{error}</div>}
 
         <div className="card" style={{ padding: 18 }}>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontSize: 24, fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>
             {client?.name || user?.client_name || 'Your Workspace'}
           </div>
           <div style={{ color: 'var(--text-s)', fontSize: 13 }}>

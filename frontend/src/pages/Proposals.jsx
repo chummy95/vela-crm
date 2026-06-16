@@ -314,7 +314,7 @@ export default function Proposals() {
             </form>
 
             <div style={{ marginTop: 14, padding: 16, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--card)' }}>
-              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 700, color: 'var(--navy)', marginBottom: 8 }}>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: 18, fontWeight: 700, color: 'var(--navy)', marginBottom: 8 }}>
                 Proposal Preview
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-s)', marginBottom: 10 }}>

@@ -285,7 +285,7 @@ export default function Contracts() {
             </form>
 
             <div style={{ marginTop: 14, padding: 16, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--card)' }}>
-              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 700, color: 'var(--navy)', marginBottom: 8 }}>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: 18, fontWeight: 700, color: 'var(--navy)', marginBottom: 8 }}>
                 Contract Preview
               </div>
               {detailForm.clauses.map((clause) => (

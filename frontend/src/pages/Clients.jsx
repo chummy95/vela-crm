@@ -178,7 +178,7 @@ export default function Clients() {
               onClick={() => setSelectedClientId(client.id)}
             >
               <div style={{ height: 72, background: client.color || 'var(--navy)', padding: '16px 18px' }}>
-                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 17, fontWeight: 700, color: '#fff' }}>{client.name}</div>
+                <div style={{ fontFamily: 'var(--font-heading)', fontSize: 17, fontWeight: 700, color: '#fff' }}>{client.name}</div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,.6)', marginTop: 2 }}>{client.industry} · {client.location || 'No location yet'}</div>
               </div>
               <div style={{ padding: '14px 18px' }}>

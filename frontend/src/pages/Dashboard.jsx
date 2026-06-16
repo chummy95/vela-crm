@@ -128,7 +128,7 @@ export default function Dashboard() {
         {error && <div className="card" style={{ padding: 16, color: 'var(--err)' }}>{error}</div>}
 
         <div className="card" style={{ padding: 18 }}>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontSize: 24, fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>
             {user?.studio_name || user?.name || 'Your studio'}
           </div>
           <div style={{ color: 'var(--text-s)', fontSize: 13 }}>
