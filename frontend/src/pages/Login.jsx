@@ -48,7 +48,7 @@ export default function Login() {
   return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--navy)' }}>
       <div style={{ background:'#fff', borderRadius:'16px', padding:'40px', width:'400px', boxShadow:'0 24px 60px rgba(0,0,0,.25)' }}>
-        <BrandLogo variant="blueTagline" width={204} alt="Vela CRM" style={{ marginBottom:'8px' }} />
+        <BrandLogo variant="blueTagline" width={148} alt="Vela CRM" style={{ marginBottom:'14px' }} />
         <div style={{ fontSize:'13px', color:'var(--text-s)', marginBottom:'28px' }}>
           {mode === 'login' ? 'Welcome back' : 'Create your studio account'}
         </div>
