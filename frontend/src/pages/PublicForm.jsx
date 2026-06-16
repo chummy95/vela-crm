@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import BrandLogo from '../components/BrandLogo';
 import { formsAPI } from '../utils/api';
 
 function fieldName(field, index) {
@@ -73,9 +74,7 @@ export default function PublicForm() {
     <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #f6efe6 0%, #fffdf8 100%)', padding: '40px 16px' }}>
       <div style={{ maxWidth: 760, margin: '0 auto' }}>
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 34, fontWeight: 700, color: 'var(--navy)', letterSpacing: '1px' }}>
-            VEL<span style={{ color: 'var(--gold)' }}>A</span>
-          </div>
+          <BrandLogo variant="blackTagline" width={240} alt="Vela CRM" style={{ marginBottom: 12 }} />
           <div style={{ marginTop: 10, color: 'var(--text-s)', fontSize: 15 }}>
             Share a few details about your project and the studio will get back to you.
           </div>

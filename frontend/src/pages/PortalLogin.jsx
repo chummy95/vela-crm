@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../hooks/useAuth';
 import { authAPI, USER_ROLES } from '../utils/api';
 
@@ -45,7 +46,8 @@ export default function PortalLogin() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, var(--navy), #314976)' }}>
       <div style={{ background: '#fff', borderRadius: '18px', padding: '40px', width: '420px', boxShadow: '0 24px 60px rgba(0,0,0,.22)' }}>
-        <div style={{ fontFamily: "'Playfair Display',serif", fontSize: '28px', fontWeight: 700, color: 'var(--navy)', letterSpacing: '2px', marginBottom: '8px' }}>
+        <BrandLogo variant="blueTagline" width={204} alt="Vela client portal" style={{ marginBottom: '8px' }} />
+        <div style={{ fontFamily: "'Playfair Display',serif", fontSize: '24px', fontWeight: 700, color: 'var(--navy)', marginBottom: '6px' }}>
           Client Portal
         </div>
         <div style={{ fontSize: '13px', color: 'var(--text-s)', marginBottom: '28px' }}>

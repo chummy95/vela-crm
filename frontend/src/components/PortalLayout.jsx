@@ -1,5 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import BrandLogo from './BrandLogo';
 import { useAuth } from '../hooks/useAuth';
 
 const NAV = [
@@ -25,7 +26,7 @@ export default function PortalLayout() {
     <div className="app">
       <aside className="sidebar" style={{ background: 'linear-gradient(180deg, var(--navy), #314976)' }}>
         <div className="sb-logo" onClick={() => navigate('/portal')}>
-          PORT<span>AL</span>
+          <BrandLogo variant="whiteTagline" width={148} alt="Vela client portal" className="brand-logo" />
         </div>
         <nav className="sb-nav">
           {NAV.map((item) => (

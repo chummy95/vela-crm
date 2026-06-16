@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../hooks/useAuth';
 import { authAPI, USER_ROLES } from '../utils/api';
 
@@ -47,9 +48,7 @@ export default function Login() {
   return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--navy)' }}>
       <div style={{ background:'#fff', borderRadius:'16px', padding:'40px', width:'400px', boxShadow:'0 24px 60px rgba(0,0,0,.25)' }}>
-        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:'28px', fontWeight:700, color:'var(--navy)', letterSpacing:'3px', marginBottom:'6px' }}>
-          VEL<span style={{ color:'var(--gold)' }}>A</span>
-        </div>
+        <BrandLogo variant="blueTagline" width={204} alt="Vela CRM" style={{ marginBottom:'8px' }} />
         <div style={{ fontSize:'13px', color:'var(--text-s)', marginBottom:'28px' }}>
           {mode === 'login' ? 'Welcome back' : 'Create your studio account'}
         </div>

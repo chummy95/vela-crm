@@ -1,5 +1,6 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import BrandLogo from './BrandLogo';
 import { useAuth } from '../hooks/useAuth';
 
 const NAV = [
@@ -24,7 +25,9 @@ export default function Layout() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <div className="sb-logo" onClick={() => navigate('/')}>VEL<span>A</span></div>
+        <div className="sb-logo" onClick={() => navigate('/')}>
+          <BrandLogo variant="white" width={126} alt="Vela CRM" className="brand-logo" />
+        </div>
         <nav className="sb-nav">
           {NAV.map(item => (
             <React.Fragment key={item.to}>
