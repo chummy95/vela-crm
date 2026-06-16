@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { USER_ROLES } from '../utils/api';
+import { authAPI, USER_ROLES } from '../utils/api';
 
 export default function PortalLogin() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const { login, error: authError } = useAuth();
   const navigate = useNavigate();
@@ -14,12 +15,28 @@ export default function PortalLogin() {
     event.preventDefault();
     setLoading(true);
     setError('');
+    setNotice('');
 
     try {
       const result = await login(form, { expectedRole: USER_ROLES.CLIENT });
       navigate(result.redirectTo || '/portal');
     } catch (loginError) {
       setError(loginError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    setLoading(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const result = await authAPI.resetPassword(form.email);
+      setNotice(result.message);
+    } catch (resetError) {
+      setError(resetError.message);
     } finally {
       setLoading(false);
     }
@@ -40,6 +57,11 @@ export default function PortalLogin() {
             {error || authError}
           </div>
         )}
+        {notice && (
+          <div style={{ background: 'rgba(41, 128, 90, 0.12)', color: '#236241', padding: '10px 13px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
+            {notice}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit}>
           <div className="fc">
@@ -49,6 +71,16 @@ export default function PortalLogin() {
           <div className="fc">
             <div className="fc-label">Password</div>
             <input className="fi" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
+          </div>
+          <div style={{ marginTop: '-4px', marginBottom: '14px', textAlign: 'right' }}>
+            <button
+              type="button"
+              onClick={handleResetPassword}
+              style={{ background: 'none', border: 'none', padding: 0, color: 'var(--navy)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+              disabled={loading}
+            >
+              Forgot password?
+            </button>
           </div>
           <button className="btn bp" style={{ width: '100%', justifyContent: 'center', padding: '11px', marginTop: '8px', fontSize: '14px' }} disabled={loading}>
             {loading ? 'Please wait…' : 'Enter Portal'}

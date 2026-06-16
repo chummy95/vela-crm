@@ -18,19 +18,22 @@ service cloud.firestore {
       return currentUserDoc().data;
     }
 
+    function currentUserRole() {
+      return currentUserExists() && ('role' in currentUserData())
+        ? currentUserData().role
+        : 'studio';
+    }
+
     function isOwner(userId) {
       return signedIn() && request.auth.uid == userId;
     }
 
     function isStudio() {
-      return signedIn()
-        && (!currentUserExists() || currentUserData().role != 'client');
+      return signedIn() && currentUserRole() == 'studio';
     }
 
     function isClient() {
-      return signedIn()
-        && currentUserExists()
-        && currentUserData().role == 'client';
+      return signedIn() && currentUserRole() == 'client';
     }
 
     function studioOwnsIncomingRecord() {

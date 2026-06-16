@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { USER_ROLES } from '../utils/api';
+import { authAPI, USER_ROLES } from '../utils/api';
 
 export default function Login() {
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ email: '', password: '', name: '', studio_name: '' });
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const { login, register, error: authError } = useAuth();
   const navigate = useNavigate();
 
   async function handleSubmit(e) {
     e.preventDefault();
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setNotice('');
     try {
       if (mode === 'login') {
         const result = await login({ email: form.email, password: form.password }, { expectedRole: USER_ROLES.STUDIO });
@@ -24,6 +25,20 @@ export default function Login() {
       }
     } catch(err) {
       setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    setError('');
+    setNotice('');
+    setLoading(true);
+    try {
+      const result = await authAPI.resetPassword(form.email);
+      setNotice(result.message);
+    } catch (resetError) {
+      setError(resetError.message);
     } finally {
       setLoading(false);
     }
@@ -40,6 +55,7 @@ export default function Login() {
         </div>
 
         {(error || authError) && <div style={{ background:'var(--err-bg)', color:'var(--err)', padding:'10px 13px', borderRadius:'8px', fontSize:'13px', marginBottom:'16px' }}>{error || authError}</div>}
+        {notice && <div style={{ background:'rgba(41, 128, 90, 0.12)', color:'#236241', padding:'10px 13px', borderRadius:'8px', fontSize:'13px', marginBottom:'16px' }}>{notice}</div>}
 
         <form onSubmit={handleSubmit}>
           {mode === 'register' && <>
@@ -48,13 +64,25 @@ export default function Login() {
           </>}
           <div className="fc"><div className="fc-label">Email</div><input className="fi" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} required /></div>
           <div className="fc"><div className="fc-label">Password</div><input className="fi" type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} required /></div>
+          {mode === 'login' && (
+            <div style={{ marginTop:'-4px', marginBottom:'14px', textAlign:'right' }}>
+              <button
+                type="button"
+                onClick={handleResetPassword}
+                style={{ background:'none', border:'none', padding:0, color:'var(--navy)', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
+                disabled={loading}
+              >
+                Forgot password?
+              </button>
+            </div>
+          )}
           <button className="btn bp" style={{ width:'100%', justifyContent:'center', padding:'11px', marginTop:'8px', fontSize:'14px' }} disabled={loading}>
             {loading ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create Account'}
           </button>
         </form>
 
         <div style={{ marginTop:'16px', textAlign:'center', fontSize:'13px', color:'var(--text-s)' }}>
-          {mode === 'login' ? <>No account? <span style={{ color:'var(--navy)', fontWeight:600, cursor:'pointer' }} onClick={()=>setMode('register')}>Sign up</span></> : <>Have an account? <span style={{ color:'var(--navy)', fontWeight:600, cursor:'pointer' }} onClick={()=>setMode('login')}>Sign in</span></>}
+          {mode === 'login' ? <>No account? <span style={{ color:'var(--navy)', fontWeight:600, cursor:'pointer' }} onClick={()=>{ setMode('register'); setError(''); setNotice(''); }}>Sign up</span></> : <>Have an account? <span style={{ color:'var(--navy)', fontWeight:600, cursor:'pointer' }} onClick={()=>{ setMode('login'); setError(''); setNotice(''); }}>Sign in</span></>}
         </div>
 
         <div style={{ marginTop:'12px', textAlign:'center', fontSize:'12px', color:'var(--text-s)' }}>

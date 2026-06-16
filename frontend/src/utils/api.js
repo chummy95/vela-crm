@@ -1,4 +1,9 @@
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth';
 import {
   addDoc,
   collection,
@@ -72,6 +77,31 @@ function toStringList(value) {
 
 function stripUndefinedValues(value) {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
+}
+
+function friendlyAuthError(error, fallback = 'Something went wrong. Please try again.') {
+  const code = text(error?.code);
+
+  switch (code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return 'The email or password is incorrect.';
+    case 'auth/invalid-email':
+      return 'Enter a valid email address.';
+    case 'auth/email-already-in-use':
+      return 'That email address is already in use.';
+    case 'auth/weak-password':
+      return 'Password must be at least 6 characters.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please wait a few minutes and try again.';
+    case 'auth/network-request-failed':
+      return 'Network error. Check your internet connection and try again.';
+    case 'auth/user-disabled':
+      return 'This account has been disabled.';
+    default:
+      return text(error?.message) || fallback;
+  }
 }
 
 export function normalizeRole(value) {
@@ -254,7 +284,12 @@ async function createPortalProfileForClient({ client, emailAddress, password, na
   const secondary = await createSecondaryFirebaseServices();
 
   try {
-    const credential = await createUserWithEmailAndPassword(secondary.auth, emailAddress, password);
+    let credential;
+    try {
+      credential = await createUserWithEmailAndPassword(secondary.auth, emailAddress, password);
+    } catch (error) {
+      throw new Error(friendlyAuthError(error, 'Unable to create portal access.'));
+    }
     const profile = {
       id: credential.user.uid,
       role: USER_ROLES.CLIENT,
@@ -287,15 +322,27 @@ export const authAPI = {
       throw new Error('Email and password are required.');
     }
 
-    const credential = await signInWithEmailAndPassword(auth, loginEmail, password);
-    const user = normalizeProfile(
-      await getUserProfile(credential.user.uid),
-      {
-        id: credential.user.uid,
-        email: credential.user.email || loginEmail,
-        name: credential.user.displayName || '',
-      }
-    );
+    let credential;
+    try {
+      credential = await signInWithEmailAndPassword(auth, loginEmail, password);
+    } catch (error) {
+      throw new Error(friendlyAuthError(error, 'Unable to sign in.'));
+    }
+
+    let user;
+    try {
+      user = normalizeProfile(
+        await getUserProfile(credential.user.uid),
+        {
+          id: credential.user.uid,
+          email: credential.user.email || loginEmail,
+          name: credential.user.displayName || '',
+        }
+      );
+    } catch (error) {
+      await signOut(auth).catch(() => {});
+      throw new Error('Signed in, but your account profile could not be loaded. Please try again.');
+    }
 
     if (expectedRole && user.role !== expectedRole) {
       await signOut(auth);
@@ -325,7 +372,12 @@ export const authAPI = {
       throw new Error('Password must be at least 6 characters.');
     }
 
-    const credential = await createUserWithEmailAndPassword(auth, registerEmail, password);
+    let credential;
+    try {
+      credential = await createUserWithEmailAndPassword(auth, registerEmail, password);
+    } catch (error) {
+      throw new Error(friendlyAuthError(error, 'Unable to create the account.'));
+    }
     const profile = {
       id: credential.user.uid,
       role: USER_ROLES.STUDIO,
@@ -344,6 +396,25 @@ export const authAPI = {
     return {
       user: profile,
       redirectTo: studioRoute(),
+    };
+  },
+
+  async resetPassword(inputEmail) {
+    ensureFirebaseConfigured();
+    const targetEmail = email(inputEmail);
+
+    if (!targetEmail) {
+      throw new Error('Enter your email address first.');
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, targetEmail);
+    } catch (error) {
+      throw new Error(friendlyAuthError(error, 'Unable to send a password reset email.'));
+    }
+
+    return {
+      message: 'Password reset email sent. Check your inbox and spam folder.',
     };
   },
 
