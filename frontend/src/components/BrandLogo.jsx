@@ -14,11 +14,11 @@ const VARIANT_MAP = {
 };
 
 const CROP_MAP = {
-  blue: { left: 208 / 1080, top: 60 / 437, width: 664 / 1080, height: 317 / 437 },
-  white: { left: 208 / 1080, top: 71 / 436, width: 664 / 1080, height: 293 / 436 },
-  blackTagline: { left: 208 / 1080, top: 60 / 437, width: 664 / 1080, height: 318 / 437 },
-  whiteTagline: { left: 208 / 1080, top: 60 / 437, width: 664 / 1080, height: 318 / 437 },
-  blueTagline: { left: 208 / 1080, top: 60 / 437, width: 664 / 1080, height: 317 / 437 },
+  blue: { left: 208, top: 60, width: 664, height: 317, sourceWidth: 1080, sourceHeight: 437 },
+  white: { left: 208, top: 71, width: 664, height: 293, sourceWidth: 1080, sourceHeight: 436 },
+  blackTagline: { left: 208, top: 60, width: 664, height: 318, sourceWidth: 1080, sourceHeight: 437 },
+  whiteTagline: { left: 208, top: 60, width: 664, height: 318, sourceWidth: 1080, sourceHeight: 437 },
+  blueTagline: { left: 208, top: 60, width: 664, height: 317, sourceWidth: 1080, sourceHeight: 437 },
 };
 
 export default function BrandLogo({
@@ -51,8 +51,8 @@ export default function BrandLogo({
           position: 'absolute',
           left: `${-(crop.left / crop.width) * 100}%`,
           top: `${-(crop.top / crop.height) * 100}%`,
-          width: `${(1 / crop.width) * 100}%`,
-          height: `${(1 / crop.height) * 100}%`,
+          width: `${(crop.sourceWidth / crop.width) * 100}%`,
+          height: `${(crop.sourceHeight / crop.height) * 100}%`,
           maxWidth: 'none',
         }}
       />
