@@ -6,21 +6,64 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function currentUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function currentUserExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function currentUserData() {
+      return currentUserDoc().data;
+    }
+
     function isOwner(userId) {
       return signedIn() && request.auth.uid == userId;
     }
 
-    function ownsIncomingRecord() {
-      return signedIn() && request.resource.data.user_id == request.auth.uid;
+    function isStudio() {
+      return signedIn()
+        && (!currentUserExists() || currentUserData().role != 'client');
     }
 
-    function ownsExistingRecord() {
-      return signedIn() && resource.data.user_id == request.auth.uid;
+    function isClient() {
+      return signedIn()
+        && currentUserExists()
+        && currentUserData().role == 'client';
     }
 
-    function keepsOwnership() {
+    function studioOwnsIncomingRecord() {
+      return isStudio() && request.resource.data.user_id == request.auth.uid;
+    }
+
+    function studioOwnsExistingRecord() {
+      return isStudio() && resource.data.user_id == request.auth.uid;
+    }
+
+    function studioKeepsOwnership() {
       return request.resource.data.user_id == request.auth.uid
         && request.resource.data.user_id == resource.data.user_id;
+    }
+
+    function clientCanReadRecord() {
+      return isClient()
+        && resource.data.client_id == currentUserData().client_id
+        && resource.data.user_id == currentUserData().studio_owner_id;
+    }
+
+    function clientCanReadOwnClient(clientId) {
+      return isClient()
+        && clientId == currentUserData().client_id
+        && resource.data.user_id == currentUserData().studio_owner_id;
+    }
+
+    function clientCanCreateMessage() {
+      return isClient()
+        && request.resource.data.client_id == currentUserData().client_id
+        && request.resource.data.user_id == currentUserData().studio_owner_id
+        && request.resource.data.sender_role == 'client'
+        && request.resource.data.outbound == false;
     }
 
     function publicFormTargetExists() {
@@ -36,51 +79,51 @@ service cloud.firestore {
     }
 
     match /clients/{docId} {
-      allow create: if ownsIncomingRecord();
-      allow get, list: if ownsExistingRecord();
-      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+      allow create: if studioOwnsIncomingRecord();
+      allow get, list: if studioOwnsExistingRecord() || clientCanReadOwnClient(docId);
+      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
     }
 
     match /projects/{docId} {
-      allow create: if ownsIncomingRecord();
-      allow get, list: if ownsExistingRecord();
-      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+      allow create: if studioOwnsIncomingRecord();
+      allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
+      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
     }
 
     match /invoices/{docId} {
-      allow create: if ownsIncomingRecord();
-      allow get, list: if ownsExistingRecord();
-      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+      allow create: if studioOwnsIncomingRecord();
+      allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
+      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
     }
 
     match /proposals/{docId} {
-      allow create: if ownsIncomingRecord();
-      allow get, list: if ownsExistingRecord();
-      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+      allow create: if studioOwnsIncomingRecord();
+      allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
+      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
     }
 
     match /contracts/{docId} {
-      allow create: if ownsIncomingRecord();
-      allow get, list: if ownsExistingRecord();
-      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+      allow create: if studioOwnsIncomingRecord();
+      allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
+      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
     }
 
     match /events/{docId} {
-      allow create: if ownsIncomingRecord();
-      allow get, list: if ownsExistingRecord();
-      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+      allow create: if studioOwnsIncomingRecord();
+      allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
+      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
     }
 
     match /messages/{docId} {
-      allow create: if ownsIncomingRecord();
-      allow get, list: if ownsExistingRecord();
-      allow update, delete: if ownsExistingRecord() && keepsOwnership();
+      allow create: if studioOwnsIncomingRecord() || clientCanCreateMessage();
+      allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
+      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
     }
 
     match /form_configs/{userId} {
       allow get: if true;
       allow list: if false;
-      allow create, update, delete: if isOwner(userId) && request.resource.data.user_id == request.auth.uid;
+      allow create, update, delete: if isStudio() && request.auth.uid == userId && request.resource.data.user_id == request.auth.uid;
     }
 
     match /form_submissions/{docId} {
@@ -88,7 +131,7 @@ service cloud.firestore {
         && request.resource.data.data is map
         && request.resource.data.submitted_at is string
         && request.resource.data.keys().hasOnly(['user_id', 'data', 'submitted_at']);
-      allow get, list: if ownsExistingRecord();
+      allow get, list: if studioOwnsExistingRecord();
       allow update, delete: if false;
     }
   }

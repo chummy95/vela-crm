@@ -2,9 +2,18 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db, firebaseConfigError, isFirebaseConfigured } from '../lib/firebase';
-import { authAPI } from '../utils/api';
+import { authAPI, normalizeRole, USER_ROLES } from '../utils/api';
 
 const AuthContext = createContext(null);
+
+function normalizeUser(firebaseUser, profile = {}) {
+  return {
+    id: firebaseUser?.uid || profile.id || '',
+    email: firebaseUser?.email || profile.email || '',
+    ...profile,
+    role: normalizeRole(profile.role),
+  };
+}
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
@@ -30,11 +39,7 @@ export function AuthProvider({ children }) {
         const snapshot = await getDoc(doc(db, 'users', firebaseUser.uid));
         const profile = snapshot.exists() ? snapshot.data() : {};
         setToken(firebaseUser.uid);
-        setUser({
-          id: firebaseUser.uid,
-          email: firebaseUser.email,
-          ...profile,
-        });
+        setUser(normalizeUser(firebaseUser, profile));
         setError('');
       } catch (authError) {
         setError(authError.message);
@@ -46,16 +51,12 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
-  async function login(credentials) {
+  async function login(credentials, options) {
     setError('');
-    const result = await authAPI.login(credentials);
+    const result = await authAPI.login(credentials, options);
     if (auth?.currentUser) {
       setToken(auth.currentUser.uid);
-      setUser({
-        id: auth.currentUser.uid,
-        email: auth.currentUser.email,
-        ...(result.user || {}),
-      });
+      setUser(normalizeUser(auth.currentUser, result.user || {}));
     }
     return result;
   }
@@ -65,11 +66,7 @@ export function AuthProvider({ children }) {
     const result = await authAPI.register(details);
     if (auth?.currentUser) {
       setToken(auth.currentUser.uid);
-      setUser({
-        id: auth.currentUser.uid,
-        email: auth.currentUser.email,
-        ...(result.user || {}),
-      });
+      setUser(normalizeUser(auth.currentUser, result.user || {}));
     }
     return result;
   }
@@ -89,4 +86,12 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   return useContext(AuthContext);
+}
+
+export function isClientUser(user) {
+  return normalizeRole(user?.role) === USER_ROLES.CLIENT;
+}
+
+export function isStudioUser(user) {
+  return normalizeRole(user?.role) === USER_ROLES.STUDIO;
 }

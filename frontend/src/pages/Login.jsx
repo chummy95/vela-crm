@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { USER_ROLES } from '../utils/api';
 
 export default function Login() {
   const [mode, setMode] = useState('login');
@@ -15,11 +16,12 @@ export default function Login() {
     setLoading(true); setError('');
     try {
       if (mode === 'login') {
-        await login({ email: form.email, password: form.password });
+        const result = await login({ email: form.email, password: form.password }, { expectedRole: USER_ROLES.STUDIO });
+        navigate(result.redirectTo || '/');
       } else {
-        await register(form);
+        const result = await register(form);
+        navigate(result.redirectTo || '/');
       }
-      navigate('/');
     } catch(err) {
       setError(err.message);
     } finally {
@@ -55,8 +57,12 @@ export default function Login() {
           {mode === 'login' ? <>No account? <span style={{ color:'var(--navy)', fontWeight:600, cursor:'pointer' }} onClick={()=>setMode('register')}>Sign up</span></> : <>Have an account? <span style={{ color:'var(--navy)', fontWeight:600, cursor:'pointer' }} onClick={()=>setMode('login')}>Sign in</span></>}
         </div>
 
+        <div style={{ marginTop:'12px', textAlign:'center', fontSize:'12px', color:'var(--text-s)' }}>
+          Client access? <span style={{ color:'var(--navy)', fontWeight:600, cursor:'pointer' }} onClick={() => navigate('/portal/login')}>Open client portal</span>
+        </div>
+
         <div style={{ marginTop:'16px', padding:'12px', background:'var(--card)', borderRadius:'8px', fontSize:'11.5px', color:'var(--text-s)' }}>
-          This app now uses Firebase Auth and Firestore. Make sure your Firebase web config is set in <code>frontend/.env</code> or <code>frontend/.env.local</code>.
+          Studio owners sign in here. Client portal accounts use a separate login linked to the same Firebase project.
         </div>
       </div>
     </div>

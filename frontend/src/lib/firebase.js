@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { deleteApp, initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
@@ -41,6 +41,19 @@ export function ensureFirebaseConfigured() {
   if (!isFirebaseConfigured) {
     throw new Error(firebaseConfigError);
   }
+}
+
+export async function createSecondaryFirebaseServices(name = `vela-secondary-${Date.now()}`) {
+  ensureFirebaseConfigured();
+  const secondaryApp = initializeApp(firebaseConfig, name);
+  return {
+    app: secondaryApp,
+    auth: getAuth(secondaryApp),
+    db: getFirestore(secondaryApp),
+    async dispose() {
+      await deleteApp(secondaryApp);
+    },
+  };
 }
 
 export { app, auth, db, firebaseConfig };

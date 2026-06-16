@@ -8,6 +8,14 @@ function blankClient() {
   return { name: '', contact: '', email: '', location: '', industry: 'Beauty & Wellness', color: '#1B2B4B' };
 }
 
+function blankPortal(client) {
+  return {
+    name: client?.portal_name || client?.contact || client?.name || '',
+    email: client?.portal_email || client?.email || '',
+    password: '',
+  };
+}
+
 export default function Clients() {
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -21,9 +29,13 @@ export default function Clients() {
   const [pageError, setPageError] = useState('');
   const [createError, setCreateError] = useState('');
   const [detailError, setDetailError] = useState('');
+  const [portalError, setPortalError] = useState('');
   const [savingCreate, setSavingCreate] = useState(false);
   const [savingDetail, setSavingDetail] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [provisioningPortal, setProvisioningPortal] = useState(false);
+  const [copiedPortal, setCopiedPortal] = useState(false);
+  const [portalForm, setPortalForm] = useState(blankPortal());
 
   async function load() {
     const [clientRows, projectRows, invoiceRows, proposalRows, contractRows] = await Promise.all([
@@ -59,7 +71,10 @@ export default function Clients() {
       industry: selectedClient.industry || 'Other',
       color: selectedClient.color || '#1B2B4B',
     });
+    setPortalForm(blankPortal(selectedClient));
     setDetailError('');
+    setPortalError('');
+    setCopiedPortal(false);
   }, [selectedClient]);
 
   const selectedSummary = useMemo(() => {
@@ -116,6 +131,32 @@ export default function Clients() {
       setDetailError(err.message);
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleCreatePortal(event) {
+    event.preventDefault();
+    if (!selectedClient) return;
+    setProvisioningPortal(true);
+    setPortalError('');
+    try {
+      const updated = await clientsAPI.createPortalAccess(selectedClient.id, portalForm);
+      setClients((prev) => prev.map((client) => (client.id === updated.id ? updated : client)));
+      setPortalForm((current) => ({ ...current, password: '' }));
+    } catch (err) {
+      setPortalError(err.message);
+    } finally {
+      setProvisioningPortal(false);
+    }
+  }
+
+  async function copyPortalLink() {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/portal/login`);
+      setCopiedPortal(true);
+      setTimeout(() => setCopiedPortal(false), 1500);
+    } catch (err) {
+      setPortalError(err.message);
     }
   }
 
@@ -219,6 +260,38 @@ export default function Clients() {
               </div>
               <div className="fc"><div className="fc-label">Brand Colour</div><input type="color" value={detailForm.color} onChange={(event) => setDetailForm({ ...detailForm, color: event.target.value })} style={{ width: 40, height: 32, borderRadius: 6, border: '1.5px solid var(--border)', cursor: 'pointer' }} /></div>
             </form>
+
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+              <div className="card-title" style={{ marginBottom: 10 }}>Client Portal</div>
+              {portalError && <div style={{ marginBottom: 12, color: 'var(--err)' }}>{portalError}</div>}
+              {selectedClient.portal_user_id ? (
+                <>
+                  <div style={{ padding: 12, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--card)', marginBottom: 12 }}>
+                    <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>Portal access is active</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-s)' }}>
+                      {selectedClient.portal_name || selectedClient.contact || selectedClient.name} can sign in with {selectedClient.portal_email || selectedClient.email || 'their portal email'}.
+                    </div>
+                  </div>
+                  <div className="fi-row">
+                    <div className="fc"><div className="fc-label">Portal Login URL</div><input className="fi" readOnly value={`${window.location.origin}/portal/login`} /></div>
+                    <div className="fc"><div className="fc-label">Portal Email</div><input className="fi" readOnly value={selectedClient.portal_email || selectedClient.email || ''} /></div>
+                  </div>
+                  <button className="btn bg" type="button" onClick={copyPortalLink}>{copiedPortal ? 'Copied' : 'Copy Portal Link'}</button>
+                </>
+              ) : (
+                <form onSubmit={handleCreatePortal}>
+                  <div style={{ fontSize: 13, color: 'var(--text-s)', marginBottom: 12 }}>
+                    Create a separate email/password account so this client can sign in to the customer portal.
+                  </div>
+                  <div className="fi-row">
+                    <div className="fc"><div className="fc-label">Portal Name</div><input className="fi" value={portalForm.name} onChange={(event) => setPortalForm({ ...portalForm, name: event.target.value })} required /></div>
+                    <div className="fc"><div className="fc-label">Portal Email</div><input className="fi" type="email" value={portalForm.email} onChange={(event) => setPortalForm({ ...portalForm, email: event.target.value })} required /></div>
+                  </div>
+                  <div className="fc"><div className="fc-label">Temporary Password</div><input className="fi" type="password" value={portalForm.password} onChange={(event) => setPortalForm({ ...portalForm, password: event.target.value })} required /></div>
+                  <button className="btn bp" type="submit" disabled={provisioningPortal}>{provisioningPortal ? 'Creating access…' : 'Create Portal Access'}</button>
+                </form>
+              )}
+            </div>
           </>
         )}
       </Modal>
