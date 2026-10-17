@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import Clients from './pages/Clients';
+import ClientProfile from './pages/ClientProfile';
 import Invoices from './pages/Invoices';
 import Proposals from './pages/Proposals';
 import Contracts from './pages/Contracts';
@@ -67,6 +68,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="projects/*" element={<Projects />} />
           <Route path="clients" element={<Clients />} />
+          <Route path="clients/:clientId" element={<ClientProfile />} />
           <Route path="invoices/*" element={<Invoices />} />
           <Route path="proposals/*" element={<Proposals />} />
           <Route path="contracts/*" element={<Contracts />} />

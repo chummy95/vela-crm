@@ -1,302 +1,308 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { contractsAPI, formsAPI, invoicesAPI, projectsAPI, proposalsAPI, eventsAPI } from '../utils/api';
-import { STAGES } from '../utils/constants';
-import Pill from '../components/Pill';
+import { JourneyRail } from '../components/ProjectJourney';
+import ClientMark from '../components/ClientMark';
+import Icon from '../components/Icon';
+import {
+  daysFromToday, formatDate, formatMoney, greeting, isOverdue, parseAmount, relativeDay, stageLabels, toDate,
+} from '../utils/format';
 
-function parseAmount(value) {
-  const numeric = Number(String(value || '').replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(numeric) ? numeric : 0;
+function pick(data, pattern) {
+  const key = Object.keys(data || {}).find((k) => pattern.test(k));
+  return key ? data[key] : '';
 }
 
-function formatMoney(value, currency = 'GBP') {
-  return new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 0,
-  }).format(value || 0);
+function dayHeading(dateString) {
+  const diff = daysFromToday(dateString);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  return formatDate(dateString, { weekday: 'long', day: 'numeric', month: 'short' });
 }
 
-function serviceStageLabels(service) {
-  const normalized = String(service || '').toLowerCase();
-  if (normalized.includes('pack')) return STAGES.packaging;
-  if (normalized.includes('web')) return STAGES.web;
-  return STAGES.brand;
-}
-
-function stageLabel(project) {
-  const labels = serviceStageLabels(project?.service);
-  const index = Number(project?.stage || 0);
-  return labels[index] || `Stage ${index + 1}`;
-}
-
-function formatDate(value) {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
-
-function submissionHeadline(data) {
-  const values = Object.values(data || {}).filter(Boolean);
-  return values.slice(0, 2).join(' · ') || 'New enquiry received';
+function plural(n, one, many = `${one}s`) {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [projects, setProjects] = useState([]);
-  const [invoices, setInvoices] = useState([]);
-  const [proposals, setProposals] = useState([]);
-  const [contracts, setContracts] = useState([]);
-  const [events, setEvents] = useState([]);
-  const [submissions, setSubmissions] = useState([]);
+  const currency = user?.currency || 'GBP';
+  const [data, setData] = useState({ projects: [], invoices: [], proposals: [], contracts: [], events: [], submissions: [] });
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      projectsAPI.list(),
-      invoicesAPI.list(),
-      proposalsAPI.list(),
-      contractsAPI.list(),
-      eventsAPI.list(),
-      formsAPI.submissions(),
-    ])
-      .then(([projectRows, invoiceRows, proposalRows, contractRows, eventRows, submissionRows]) => {
-        setProjects(projectRows);
-        setInvoices(invoiceRows);
-        setProposals(proposalRows);
-        setContracts(contractRows);
-        setEvents(eventRows);
-        setSubmissions(submissionRows);
+    Promise.all([projectsAPI.list(), invoicesAPI.list(), proposalsAPI.list(), contractsAPI.list(), eventsAPI.list(), formsAPI.submissions()])
+      .then(([projects, invoices, proposals, contracts, events, submissions]) => {
+        setData({ projects, invoices, proposals, contracts, events, submissions });
       })
-      .catch((loadError) => setError(loadError.message));
+      .catch((loadError) => setError(loadError.message))
+      .finally(() => setLoaded(true));
   }, []);
 
-  const outstandingInvoices = useMemo(
-    () => invoices.filter((invoice) => invoice.status !== 'paid'),
-    [invoices]
-  );
-  const activeProjects = useMemo(
-    () => projects.filter((project) => project.status === 'active'),
-    [projects]
-  );
-  const approvedProposals = useMemo(
-    () => proposals.filter((proposal) => proposal.status === 'approved'),
-    [proposals]
-  );
-  const signedContracts = useMemo(
-    () => contracts.filter((contract) => contract.signed),
-    [contracts]
-  );
-  const outstandingAmount = useMemo(
-    () => outstandingInvoices.reduce((sum, invoice) => sum + parseAmount(invoice.amount), 0),
-    [outstandingInvoices]
-  );
-  const paidAmount = useMemo(
-    () => invoices.filter((invoice) => invoice.status === 'paid').reduce((sum, invoice) => sum + parseAmount(invoice.amount), 0),
-    [invoices]
-  );
-  const upcomingEvents = useMemo(
-    () => events.slice(0, 5),
-    [events]
-  );
-  const latestSubmissions = useMemo(
-    () => submissions.slice(0, 5),
+  const { projects, invoices, proposals, contracts, events, submissions } = data;
+
+  const activeProjects = useMemo(() => projects.filter((p) => p.status === 'active'), [projects]);
+
+  const money = useMemo(() => {
+    const unpaid = invoices.filter((i) => i.status !== 'paid');
+    const overdue = unpaid.filter(isOverdue);
+    return {
+      outstanding: unpaid.reduce((s, i) => s + parseAmount(i.amount), 0),
+      overdue: overdue.reduce((s, i) => s + parseAmount(i.amount), 0),
+      collected: invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + parseAmount(i.amount), 0),
+      proposed: proposals.filter((p) => p.status === 'sent').reduce((s, p) => s + parseAmount(p.value), 0),
+      booked: activeProjects.reduce((s, p) => s + parseAmount(p.value), 0),
+    };
+  }, [invoices, proposals, activeProjects]);
+
+  const attention = useMemo(() => {
+    const items = [];
+    invoices.filter(isOverdue).forEach((inv) => items.push({
+      key: `inv-${inv.id}`, level: 'err', rank: 0,
+      title: `${inv.client_name || 'A client'} owes ${formatMoney(inv.amount, currency)}`,
+      sub: `${inv.description || 'Invoice'}, due ${relativeDay(inv.due_date)}`,
+      to: `/invoices/${inv.id}`,
+    }));
+    invoices.filter((inv) => inv.status !== 'paid' && !isOverdue(inv)).forEach((inv) => {
+      const diff = daysFromToday(inv.due_date);
+      if (diff !== null && diff <= 7) {
+        items.push({
+          key: `due-${inv.id}`, level: 'warn', rank: 1,
+          title: `${formatMoney(inv.amount, currency)} due from ${inv.client_name || 'a client'}`,
+          sub: `${inv.description || 'Invoice'}, due ${relativeDay(inv.due_date)}`,
+          to: `/invoices/${inv.id}`,
+        });
+      }
+    });
+    contracts.filter((c) => !c.signed).forEach((c) => items.push({
+      key: `ct-${c.id}`, level: 'warn', rank: 2,
+      title: `${c.client_name || 'A client'} hasn’t signed their contract`,
+      sub: `${c.service || 'Contract'}${c.value ? `, ${formatMoney(c.value, currency)}` : ''}`,
+      to: `/contracts/${c.id}`,
+    }));
+    proposals.filter((p) => p.status === 'sent').forEach((p) => items.push({
+      key: `pp-${p.id}`, level: 'info', rank: 3,
+      title: `Waiting on ${p.client_name || 'a client'} to approve a proposal`,
+      sub: `${p.service || 'Proposal'}, sent ${relativeDay(p.date || p.created_at)}`,
+      to: `/proposals/${p.id}`,
+    }));
+    submissions.filter((s) => {
+      const diff = daysFromToday(s.submitted_at);
+      return diff !== null && diff >= -7;
+    }).forEach((s) => items.push({
+      key: `sub-${s.id}`, level: 'info', rank: 4,
+      title: `New enquiry from ${pick(s.data, /full name|^name/i) || 'someone new'}`,
+      sub: [pick(s.data, /brand|business/i), pick(s.data, /service/i)].filter(Boolean).join(', ') || `Received ${relativeDay(s.submitted_at)}`,
+      to: '/forms',
+    }));
+    return items.sort((a, b) => a.rank - b.rank);
+  }, [invoices, contracts, proposals, submissions, currency]);
+
+  const week = useMemo(() => {
+    const upcoming = events
+      .filter((e) => {
+        const diff = daysFromToday(e.date);
+        return diff !== null && diff >= 0 && diff <= 6;
+      })
+      .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`));
+    const groups = [];
+    upcoming.forEach((e) => {
+      const last = groups[groups.length - 1];
+      if (last && last.date === e.date) last.items.push(e);
+      else groups.push({ date: e.date, items: [e] });
+    });
+    return groups;
+  }, [events]);
+
+  const recentEnquiries = useMemo(
+    () => [...submissions].sort((a, b) => (toDate(b.submitted_at) || 0) - (toDate(a.submitted_at) || 0)).slice(0, 4),
     [submissions]
   );
-  const recentProjects = useMemo(
-    () => activeProjects.slice(0, 5),
-    [activeProjects]
-  );
-  const recentInvoices = useMemo(
-    () => outstandingInvoices.slice(0, 5),
-    [outstandingInvoices]
-  );
+
+  async function copyIntakeLink() {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/intake/${user?.id}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (copyError) {
+      setError(copyError.message);
+    }
+  }
+
+  const firstName = (user?.name || '').split(' ')[0];
+  const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  const needsYou = attention.filter((a) => a.rank <= 2).length;
 
   return (
-    <>
-      <div className="topbar">
-        <div className="tb-title">Studio Dashboard</div>
-        <div className="tb-r">
-          <button className="btn bg bsm" onClick={() => navigate('/forms')}>View Intake</button>
-          <button className="btn bg bsm" onClick={() => navigate('/projects')}>Projects</button>
-          <button className="btn bp bsm" onClick={() => navigate('/invoices')}>Invoices</button>
-        </div>
-      </div>
-      <div className="content">
-        {error && <div className="card" style={{ padding: 16, color: 'var(--err)' }}>{error}</div>}
+    <div className="content">
+      <div className="page">
+        <header style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
+          <div>
+            <div className="muted" style={{ fontSize: 13.5, marginBottom: 6 }}>{today}</div>
+            <h1 className="h-display">{greeting()}{firstName ? `, ${firstName}` : ''}</h1>
+            {loaded && (
+              <p className="lede" style={{ marginTop: 8 }}>
+                {activeProjects.length
+                  ? `${plural(activeProjects.length, 'project')} in motion`
+                  : 'No projects in motion yet'}
+                {needsYou ? ` and ${plural(needsYou, 'thing')} waiting on you.` : '. Nothing is waiting on you.'}
+              </p>
+            )}
+          </div>
+          <div className="tb-r">
+            <button className="btn bg" type="button" onClick={copyIntakeLink}>
+              <Icon name={copied ? 'check' : 'link'} />
+              {copied ? 'Link copied' : 'Copy enquiry form link'}
+            </button>
+            <button className="btn bp" type="button" onClick={() => navigate('/clients?new=1')}>
+              <Icon name="plus" />
+              Add client
+            </button>
+          </div>
+        </header>
 
-        <div className="card" style={{ padding: 18 }}>
-          <div style={{ fontFamily: 'var(--font-heading)', fontSize: 24, fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>
-            {user?.studio_name || user?.name || 'Your studio'}
-          </div>
-          <div style={{ color: 'var(--text-s)', fontSize: 13 }}>
-            Track live projects, open invoices, and incoming leads from one place.
-          </div>
-        </div>
+        {error && <div className="form-error" style={{ marginTop: 20 }}>{error}</div>}
 
-        <div className="stat-grid">
-          <div className="stat-card" onClick={() => navigate('/invoices')}>
-            <div className="stat-val">{outstandingInvoices.length}</div>
-            <div className="stat-label">Open Invoices</div>
+        <div className="figures" style={{ marginTop: 28 }}>
+          <div className="figure">
+            <div className="figure-val">{formatMoney(money.outstanding, currency)}</div>
+            <div className="figure-label">Waiting to be paid</div>
+            {money.overdue > 0 && <div className="figure-note">{formatMoney(money.overdue, currency)} overdue</div>}
           </div>
-          <div className="stat-card" onClick={() => navigate('/projects')}>
-            <div className="stat-val">{activeProjects.length}</div>
-            <div className="stat-label">Active Projects</div>
+          <div className="figure">
+            <div className="figure-val">{formatMoney(money.collected, currency)}</div>
+            <div className="figure-label">Collected</div>
           </div>
-          <div className="stat-card" onClick={() => navigate('/proposals')}>
-            <div className="stat-val">{approvedProposals.length}</div>
-            <div className="stat-label">Approved Proposals</div>
+          <div className="figure">
+            <div className="figure-val">{formatMoney(money.booked, currency)}</div>
+            <div className="figure-label">Booked in active projects</div>
           </div>
-          <div className="stat-card" onClick={() => navigate('/forms')}>
-            <div className="stat-val">{submissions.length}</div>
-            <div className="stat-label">Total Leads</div>
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, marginBottom: 14 }}>
-          <div className="card" style={{ padding: 18 }}>
-            <div className="card-title" style={{ marginBottom: 10 }}>Cash Snapshot</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-              <div style={{ padding: 14, border: '1px solid var(--border)', borderRadius: 10 }}>
-                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>{formatMoney(outstandingAmount, user?.currency || 'GBP')}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-s)' }}>Outstanding revenue</div>
-              </div>
-              <div style={{ padding: 14, border: '1px solid var(--border)', borderRadius: 10 }}>
-                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>{formatMoney(paidAmount, user?.currency || 'GBP')}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-s)' }}>Collected revenue</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="card" style={{ padding: 18 }}>
-            <div className="card-title" style={{ marginBottom: 10 }}>Pipeline Snapshot</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-              <div style={{ padding: 14, border: '1px solid var(--border)', borderRadius: 10 }}>
-                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>{proposals.length}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-s)' }}>Proposals</div>
-              </div>
-              <div style={{ padding: 14, border: '1px solid var(--border)', borderRadius: 10 }}>
-                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>{signedContracts.length}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-s)' }}>Signed Contracts</div>
-              </div>
-              <div style={{ padding: 14, border: '1px solid var(--border)', borderRadius: 10 }}>
-                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>{events.length}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-s)' }}>Scheduled Events</div>
-              </div>
-            </div>
+          <div className="figure">
+            <div className="figure-val">{formatMoney(money.proposed, currency)}</div>
+            <div className="figure-label">Out in proposals</div>
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-h">
-            <div className="card-title">Active Projects</div>
-            <button className="btn bg bsm" onClick={() => navigate('/projects')}>View All</button>
-          </div>
-          <table className="tbl">
-            <thead><tr><th>Client</th><th>Service</th><th>Stage Output</th><th>Status</th></tr></thead>
-            <tbody>
-              {recentProjects.map((project) => (
-                <tr key={project.id} onClick={() => navigate(`/projects/${project.id}`)}>
-                  <td><b>{project.client_name || 'Unknown client'}</b></td>
-                  <td>{project.service || '—'}</td>
-                  <td>{stageLabel(project)}</td>
-                  <td><Pill status={project.status} /></td>
-                </tr>
-              ))}
-              {recentProjects.length === 0 && (
-                <tr>
-                  <td colSpan="4" style={{ color: 'var(--text-s)', textAlign: 'center', padding: '24px' }}>
-                    No projects yet. Add a client, then create your first project.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
-          <div className="card">
-            <div className="card-h">
-              <div className="card-title">Open Invoices</div>
-              <button className="btn bg bsm" onClick={() => navigate('/invoices')}>Billing</button>
-            </div>
-            <table className="tbl">
-              <thead><tr><th>Client</th><th>Amount</th><th>Due</th><th>Status</th></tr></thead>
-              <tbody>
-                {recentInvoices.map((invoice) => (
-                  <tr key={invoice.id} onClick={() => navigate(`/invoices/${invoice.id}`)}>
-                    <td><b>{invoice.client_name || 'Unknown client'}</b></td>
-                    <td>{invoice.amount || '—'}</td>
-                    <td>{formatDate(invoice.due_date)}</td>
-                    <td><Pill status={invoice.status} /></td>
-                  </tr>
+        <div className="split even section">
+          <section className="panel" aria-labelledby="attn-h">
+            <div className="card-h"><h2 id="attn-h" className="card-title">Needs your attention</h2></div>
+            {attention.length ? (
+              <ul className="rows">
+                {attention.slice(0, 6).map((item) => (
+                  <li key={item.key}>
+                    <Link className="row" to={item.to}>
+                      <span className={`signal ${item.level}`} />
+                      <span className="row-main">
+                        <span className="row-title" style={{ display: 'block' }}>{item.title}</span>
+                        <span className="row-sub" style={{ display: 'block' }}>{item.sub}</span>
+                      </span>
+                      <Icon name="forward" size={16} className="ico faint" />
+                    </Link>
+                  </li>
                 ))}
-                {recentInvoices.length === 0 && (
-                  <tr>
-                    <td colSpan="4" style={{ color: 'var(--text-s)', textAlign: 'center', padding: '24px' }}>
-                      No unpaid invoices right now.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+              </ul>
+            ) : (
+              <div className="empty">{loaded ? 'You’re all caught up. Overdue invoices, unsigned contracts and new enquiries will appear here.' : 'Loading…'}</div>
+            )}
+          </section>
 
-          <div className="card">
+          <section className="panel" aria-labelledby="week-h">
             <div className="card-h">
-              <div className="card-title">Upcoming Schedule</div>
-              <button className="btn bg bsm" onClick={() => navigate('/scheduler')}>Open Calendar</button>
+              <h2 id="week-h" className="card-title">This week</h2>
+              <Link to="/scheduler" style={{ fontSize: 13 }}>Open schedule</Link>
             </div>
-            <table className="tbl">
-              <thead><tr><th>Event</th><th>Client</th><th>Date</th><th>Time</th></tr></thead>
-              <tbody>
-                {upcomingEvents.map((event) => (
-                  <tr key={event.id} onClick={() => navigate('/scheduler')}>
-                    <td><b>{event.title}</b></td>
-                    <td>{event.client_name || 'Internal'}</td>
-                    <td>{formatDate(event.date)}</td>
-                    <td>{event.time || '—'}</td>
-                  </tr>
+            {week.length ? (
+              <div style={{ paddingBottom: 8 }}>
+                {week.map((group) => (
+                  <div key={group.date}>
+                    <div className={`agenda-day${daysFromToday(group.date) === 0 ? ' today' : ''}`}>{dayHeading(group.date)}</div>
+                    {group.items.map((e) => (
+                      <div key={e.id} className="agenda-item">
+                        <span className="agenda-time">{e.time || 'All day'}</span>
+                        <span>
+                          <span className="row-title" style={{ display: 'block' }}>{e.title || e.event_type || 'Meeting'}</span>
+                          <span className="row-sub" style={{ display: 'block' }}>{e.client_name || 'Studio time'}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 ))}
-                {upcomingEvents.length === 0 && (
-                  <tr>
-                    <td colSpan="4" style={{ color: 'var(--text-s)', textAlign: 'center', padding: '24px' }}>
-                      No upcoming events scheduled.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            ) : (
+              <div className="empty">{loaded ? 'Nothing booked in the next seven days.' : 'Loading…'}</div>
+            )}
+          </section>
         </div>
 
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="card-h">
-            <div className="card-title">Recent Enquiries</div>
-            <button className="btn bg bsm" onClick={() => navigate('/forms')}>Open Inbox</button>
+        <section className="section" aria-labelledby="motion-h">
+          <div className="section-h">
+            <h2 id="motion-h" className="h-section">Projects in motion</h2>
+            <Link className="link" to="/projects">All projects</Link>
           </div>
-          <table className="tbl">
-            <thead><tr><th>Submitted</th><th>Lead Summary</th></tr></thead>
-            <tbody>
-              {latestSubmissions.map((submission) => (
-                <tr key={submission.id} onClick={() => navigate('/forms')}>
-                  <td>{formatDate(submission.submitted_at)}</td>
-                  <td>{submissionHeadline(submission.data)}</td>
-                </tr>
-              ))}
-              {latestSubmissions.length === 0 && (
-                <tr>
-                  <td colSpan="2" style={{ color: 'var(--text-s)', textAlign: 'center', padding: '24px' }}>
-                    No enquiries yet. Share your intake form to start receiving leads.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+          <div className="panel">
+            {activeProjects.length ? (
+              <div className="journeys">
+                {activeProjects.map((p) => {
+                  const total = stageLabels(p.service).length;
+                  return (
+                    <Link key={p.id} className="journey" to={`/projects/${p.id}`}>
+                      <span className="journey-who">
+                        <ClientMark name={p.client_name} color={p.client_color} size={36} />
+                        <span style={{ minWidth: 0 }}>
+                          <span className="journey-name" style={{ display: 'block' }}>{p.client_name || 'Untitled client'}</span>
+                          <span className="journey-service">{p.service}</span>
+                        </span>
+                      </span>
+                      <JourneyRail project={p} />
+                      <span className="journey-meta">
+                        <span className="journey-value" style={{ display: 'block' }}>{p.value ? formatMoney(p.value, currency) : '—'}</span>
+                        <span className="journey-when">Stage {Math.min(Number(p.stage || 0) + 1, total)} of {total}</span>
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty">
+                {loaded ? <>No active projects. <Link to="/projects">Start a project</Link> once a client has signed.</> : 'Loading…'}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="section" aria-labelledby="enq-h">
+          <div className="section-h">
+            <h2 id="enq-h" className="h-section">Latest enquiries</h2>
+            <Link className="link" to="/forms">All enquiries</Link>
+          </div>
+          <div className="panel tbl-wrap">
+            {recentEnquiries.length ? (
+              <table className="tbl">
+                <thead>
+                  <tr><th>From</th><th>Brand</th><th className="hide-sm">Interested in</th><th className="hide-sm">Budget</th><th className="r">Received</th></tr>
+                </thead>
+                <tbody>
+                  {recentEnquiries.map((s) => (
+                    <tr key={s.id} onClick={() => navigate('/forms')}>
+                      <td style={{ fontWeight: 500 }}>{pick(s.data, /full name|^name/i) || '—'}</td>
+                      <td>{pick(s.data, /brand|business/i) || '—'}</td>
+                      <td className="hide-sm">{pick(s.data, /service/i) || '—'}</td>
+                      <td className="hide-sm">{pick(s.data, /budget/i) || '—'}</td>
+                      <td className="r muted">{relativeDay(s.submitted_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="empty">{loaded ? <>No enquiries yet. Copy your enquiry form link above and add it to your website.</> : 'Loading…'}</div>
+            )}
+          </div>
+        </section>
       </div>
-    </>
+    </div>
   );
 }

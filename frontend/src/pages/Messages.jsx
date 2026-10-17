@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { clientsAPI, invoicesAPI, messagesAPI, projectsAPI } from '../utils/api';
 import Pill from '../components/Pill';
 
@@ -15,6 +16,8 @@ function formatTime(value) {
 }
 
 export default function Messages() {
+  const [searchParams] = useSearchParams();
+  const requestedClientId = searchParams.get('client') || '';
   const [threads, setThreads] = useState([]);
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -33,7 +36,7 @@ export default function Messages() {
         setClients(clientRows);
         setProjects(projectRows);
         setInvoices(invoiceRows);
-        setSelectedClientId((current) => current || threadRows[0]?.client_id || clientRows[0]?.id || '');
+        setSelectedClientId((current) => current || requestedClientId || threadRows[0]?.client_id || clientRows[0]?.id || '');
         setError('');
       })
       .catch((loadError) => setError(loadError.message));

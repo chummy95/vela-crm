@@ -21,6 +21,8 @@ export const STATUS_COLORS = {
   pending:   { bg: 'var(--warn-bg)',   color: 'var(--warn)' },
   delivered: { bg: 'var(--navy-pale)', color: 'var(--navy)' },
   completed: { bg: 'var(--ok-bg)',     color: 'var(--ok)'   },
+  overdue:   { bg: 'var(--err-bg)',    color: 'var(--err)'  },
+  unsigned:  { bg: 'var(--warn-bg)',   color: 'var(--warn)' },
 };
 
 export const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];

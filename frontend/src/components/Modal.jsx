@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import Icon from './Icon';
 
 export default function Modal({ open, onClose, title, children, footer }) {
   useEffect(() => {
@@ -11,10 +12,10 @@ export default function Modal({ open, onClose, title, children, footer }) {
 
   return (
     <div className="mo open" onClick={e => { if(e.target === e.currentTarget) onClose(); }}>
-      <div className="md">
+      <div className="md" role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}>
         <div className="mh">
           <span className="mt">{title}</span>
-          <button className="mc" onClick={onClose}>✕</button>
+          <button className="mc" type="button" onClick={onClose} aria-label="Close"><Icon name="close" size={18} /></button>
         </div>
         <div className="mb">{children}</div>
         {footer && <div className="mf">{footer}</div>}
