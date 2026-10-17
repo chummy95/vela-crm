@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import BrandLogo from '../components/BrandLogo';
+import AuthLayout from '../components/AuthLayout';
 import { useAuth } from '../hooks/useAuth';
 import { authAPI, USER_ROLES } from '../utils/api';
 
@@ -44,55 +44,27 @@ export default function PortalLogin() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, var(--navy), #314976)' }}>
-      <div className="auth-card" style={{ background: '#fff', borderRadius: '18px', padding: '40px', width: '420px', boxShadow: '0 24px 60px rgba(0,0,0,.22)' }}>
-        <BrandLogo variant="blueTagline" width={126} alt="Vela client portal" style={{ margin: '0 auto 14px' }} />
-        <div style={{ fontFamily: 'var(--font-heading)', fontSize: '24px', fontWeight: 700, color: 'var(--brand-blue)', marginBottom: '6px' }}>
-          Client Portal
+    <AuthLayout
+      eyebrow="Client portal"
+      title="Your project, in one place"
+      intro="Sign in with the email and password your studio gave you."
+      footer={<>Run the studio? <button type="button" className="auth-link" onClick={() => navigate('/login')}>Studio sign in</button></>}
+    >
+      {(error || authError) && <div className="form-error" role="alert">{error || authError}</div>}
+      {notice && <div className="notice ok" role="status" style={{ marginBottom: 14 }}>{notice}</div>}
+      <form onSubmit={handleSubmit}>
+        <div className="fc"><label className="fc-label" htmlFor="portal-email">Email</label><input id="portal-email" className="fi" type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></div>
+        <div className="fc">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <label className="fc-label" htmlFor="portal-pass">Password</label>
+            <button type="button" className="auth-link" style={{ fontSize: 12.5 }} onClick={handleResetPassword} disabled={loading}>Forgot password?</button>
+          </div>
+          <input id="portal-pass" className="fi" type="password" autoComplete="current-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
         </div>
-        <div className="auth-copy" style={{ fontSize: '13px', marginBottom: '28px' }}>
-          Sign in to review your project progress, invoices, documents, and messages.
-        </div>
-
-        {(error || authError) && (
-          <div style={{ background: 'var(--err-bg)', color: 'var(--err)', padding: '10px 13px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
-            {error || authError}
-          </div>
-        )}
-        {notice && (
-          <div style={{ background: 'rgba(41, 128, 90, 0.12)', color: '#236241', padding: '10px 13px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
-            {notice}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit}>
-          <div className="fc">
-            <div className="fc-label">Email</div>
-            <input className="fi" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required />
-          </div>
-          <div className="fc">
-            <div className="fc-label">Password</div>
-            <input className="fi" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
-          </div>
-          <div style={{ marginTop: '-4px', marginBottom: '14px', textAlign: 'right' }}>
-            <button
-              type="button"
-              onClick={handleResetPassword}
-              style={{ background: 'none', border: 'none', padding: 0, color: 'var(--brand-blue)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
-              disabled={loading}
-            >
-              Forgot password?
-            </button>
-          </div>
-          <button className="btn bp" style={{ width: '100%', justifyContent: 'center', padding: '11px', marginTop: '8px', fontSize: '14px' }} disabled={loading}>
-            {loading ? 'Please wait…' : 'Enter Portal'}
-          </button>
-        </form>
-
-        <div className="auth-link-row" style={{ marginTop: '16px', textAlign: 'center', fontSize: '12px' }}>
-          Studio owner? <span style={{ color: 'var(--brand-blue)', fontWeight: 600, cursor: 'pointer' }} onClick={() => navigate('/login')}>Return to studio login</span>
-        </div>
-      </div>
-    </div>
+        <button className="btn bp" type="submit" style={{ width: '100%', justifyContent: 'center', padding: '11px', marginTop: 6, fontSize: 14 }} disabled={loading}>
+          {loading ? 'Please wait…' : 'Sign in'}
+        </button>
+      </form>
+    </AuthLayout>
   );
 }

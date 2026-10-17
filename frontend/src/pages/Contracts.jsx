@@ -1,88 +1,121 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import Modal from '../components/Modal';
 import Pill from '../components/Pill';
+import Icon from '../components/Icon';
+import ClientMark from '../components/ClientMark';
+import { ContractDocument } from '../components/Documents';
+import { useAuth } from '../hooks/useAuth';
 import { clientsAPI, contractsAPI } from '../utils/api';
 import { DEFAULT_CLAUSES } from '../utils/constants';
+import { formatDate, formatMoney } from '../utils/format';
 
-function blankContract(clientId = '', clientName = '', clientEmail = '') {
+const FILTERS = [
+  { key: 'unsigned', label: 'Awaiting signature' },
+  { key: 'signed', label: 'Signed' },
+  { key: 'all', label: 'All' },
+];
+
+function blankContract(client) {
   return {
-    client_id: clientId,
-    client_name: clientName,
-    client_email: clientEmail,
-    client_address: '',
-    service: '',
-    value: '',
-    start_date: '',
-    duration: '',
-    date: '',
-    clauses: DEFAULT_CLAUSES,
+    client_id: client?.id || '', client_name: client?.name || '', client_email: client?.email || '', client_address: '',
+    service: '', value: '', start_date: '', duration: '', date: new Date().toISOString().slice(0, 10), clauses: DEFAULT_CLAUSES,
   };
 }
 
-function renderClauseBody(clause, form) {
-  return String(clause.body || '')
-    .replace('__SERVICE__', form.service || 'the agreed service')
-    .replace('__VALUE__', form.value || 'the agreed value');
+function contractToForm(c) {
+  return {
+    client_id: c.client_id || '', client_name: c.client_name || '', client_email: c.client_email || '', client_address: c.client_address || '',
+    service: c.service || '', value: c.value || '', start_date: c.start_date || '', duration: c.duration || '', date: c.date || '',
+    clauses: Array.isArray(c.clauses) && c.clauses.length ? c.clauses : DEFAULT_CLAUSES, signed: Boolean(c.signed),
+  };
+}
+
+function Field({ id, label, children }) {
+  return <div className="fc"><label className="fc-label" htmlFor={id}>{label}</label>{children}</div>;
 }
 
 export default function Contracts() {
   const navigate = useNavigate();
   const params = useParams();
-  const routeContractId = (params['*'] || '').split('/')[0] || '';
+  const routeId = (params['*'] || '').split('/')[0] || '';
+  const { user } = useAuth();
+  const currency = user?.currency || 'GBP';
 
   const [contracts, setContracts] = useState([]);
   const [clients, setClients] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [filter, setFilter] = useState('all');
+  const [pageError, setPageError] = useState('');
+
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState(blankContract());
-  const [detailForm, setDetailForm] = useState(blankContract());
-  const [pageError, setPageError] = useState('');
   const [createError, setCreateError] = useState('');
-  const [detailError, setDetailError] = useState('');
   const [savingCreate, setSavingCreate] = useState(false);
-  const [savingDetail, setSavingDetail] = useState(false);
+
+  const [form, setForm] = useState(blankContract());
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState('');
+  const [detailError, setDetailError] = useState('');
+  const [confirmSign, setConfirmSign] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  async function load() {
-    const [contractRows, clientRows] = await Promise.all([contractsAPI.list(), clientsAPI.list()]);
-    setContracts(contractRows);
-    setClients(clientRows);
-    if (clientRows[0]) {
-      setCreateForm((current) => ({
-        ...current,
-        client_id: current.client_id || clientRows[0].id,
-        client_name: current.client_name || clientRows[0].name,
-        client_email: current.client_email || clientRows[0].email || '',
-      }));
-    }
-  }
-
   useEffect(() => {
-    load().catch((err) => setPageError(err.message));
+    Promise.all([contractsAPI.list(), clientsAPI.list()])
+      .then(([rows, clientRows]) => { setContracts(rows); setClients(clientRows); })
+      .catch((err) => setPageError(err.message))
+      .finally(() => setLoaded(true));
   }, []);
 
-  const selectedContract = useMemo(
-    () => contracts.find((contract) => contract.id === routeContractId) || null,
-    [contracts, routeContractId]
-  );
+  const selected = useMemo(() => contracts.find((c) => c.id === routeId) || null, [contracts, routeId]);
 
   useEffect(() => {
-    if (!selectedContract) return;
-    setDetailForm({
-      client_id: selectedContract.client_id || '',
-      client_name: selectedContract.client_name || '',
-      client_email: selectedContract.client_email || '',
-      client_address: selectedContract.client_address || '',
-      service: selectedContract.service || '',
-      value: selectedContract.value || '',
-      start_date: selectedContract.start_date || '',
-      duration: selectedContract.duration || '',
-      date: selectedContract.date || '',
-      clauses: Array.isArray(selectedContract.clauses) ? selectedContract.clauses : DEFAULT_CLAUSES,
-      signed: Boolean(selectedContract.signed),
-    });
+    if (!selected) return;
+    setForm(contractToForm(selected));
+    setDirty(false);
+    setSavedAt('');
     setDetailError('');
-  }, [selectedContract]);
+    setConfirmSign(false);
+    setConfirmDelete(false);
+  }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const counts = useMemo(() => ({
+    unsigned: contracts.filter((c) => !c.signed).length,
+    signed: contracts.filter((c) => c.signed).length,
+    all: contracts.length,
+  }), [contracts]);
+
+  const rows = useMemo(
+    () => contracts.filter((c) => (filter === 'all' ? true : filter === 'signed' ? c.signed : !c.signed)),
+    [contracts, filter]
+  );
+
+  const colorFor = (clientId) => clients.find((c) => c.id === clientId)?.color;
+
+  function edit(key) {
+    return (e) => { setForm((f) => ({ ...f, [key]: e.target.value })); setDirty(true); };
+  }
+
+  function editClause(index, body) {
+    setForm((f) => ({ ...f, clauses: f.clauses.map((c, i) => (i === index ? { ...c, body } : c)) }));
+    setDirty(true);
+  }
+
+  function pickClient(setter, markDirty) {
+    return (e) => {
+      const client = clients.find((c) => c.id === e.target.value);
+      setter((f) => ({ ...f, client_id: e.target.value, client_name: client?.name || '', client_email: client?.email || f.client_email }));
+      if (markDirty) setDirty(true);
+    };
+  }
+
+  function openCreate() {
+    setCreateForm(blankContract(clients[0]));
+    setCreateError('');
+    setCreateOpen(true);
+  }
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -100,203 +133,213 @@ export default function Contracts() {
     }
   }
 
-  async function handleUpdate(event) {
-    event.preventDefault();
-    if (!selectedContract) return;
-    setSavingDetail(true);
+  async function save() {
+    setSaving(true);
     setDetailError('');
     try {
-      const updated = await contractsAPI.update(selectedContract.id, detailForm);
-      setContracts((prev) => prev.map((contract) => (contract.id === updated.id ? updated : contract)));
+      const updated = await contractsAPI.update(selected.id, form);
+      setContracts((prev) => prev.map((c) => (c.id === selected.id ? { ...c, ...(updated || form) } : c)));
+      setDirty(false);
+      setSavedAt(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
     } catch (err) {
       setDetailError(err.message);
     } finally {
-      setSavingDetail(false);
+      setSaving(false);
     }
   }
 
-  async function sign(contract) {
+  async function markSigned() {
+    if (!confirmSign) { setConfirmSign(true); return; }
+    setSaving(true);
     try {
-      await contractsAPI.sign(contract.id);
-      setContracts((prev) => prev.map((item) => (item.id === contract.id ? { ...item, signed: true } : item)));
-      if (selectedContract?.id === contract.id) {
-        setDetailForm((current) => ({ ...current, signed: true }));
-      }
+      if (dirty) await contractsAPI.update(selected.id, form);
+      await contractsAPI.sign(selected.id);
+      setContracts((prev) => prev.map((c) => (c.id === selected.id ? { ...c, ...form, signed: true } : c)));
+      setForm((f) => ({ ...f, signed: true }));
+      setDirty(false);
+      setConfirmSign(false);
     } catch (err) {
       setDetailError(err.message);
-      setPageError(err.message);
+    } finally {
+      setSaving(false);
     }
   }
 
   async function handleDelete() {
-    if (!selectedContract) return;
+    if (!confirmDelete) { setConfirmDelete(true); return; }
     setDeleting(true);
-    setDetailError('');
     try {
-      await contractsAPI.remove(selectedContract.id);
-      setContracts((prev) => prev.filter((contract) => contract.id !== selectedContract.id));
+      await contractsAPI.remove(selected.id);
+      setContracts((prev) => prev.filter((c) => c.id !== selected.id));
       navigate('/contracts');
     } catch (err) {
       setDetailError(err.message);
-    } finally {
       setDeleting(false);
     }
   }
 
+  /* ── Contract editor ──────────────────────────────────────── */
+  if (routeId) {
+    if (loaded && !selected) {
+      return (
+        <>
+          <div className="topbar"><nav className="tb-crumb"><Link to="/contracts"><Icon name="back" size={16} />Contracts</Link></nav></div>
+          <div className="content"><div className="page panel empty" style={{ padding: 40 }}><b>This contract doesn’t exist any more.</b> <Link to="/contracts">Back to contracts</Link></div></div>
+        </>
+      );
+    }
+    if (!selected) return <div className="content"><div className="muted">Loading…</div></div>;
+    const signed = form.signed;
+
+    return (
+      <>
+        <div className="topbar">
+          <nav className="tb-crumb" aria-label="Breadcrumb"><Link to="/contracts"><Icon name="back" size={16} />Contracts</Link></nav>
+          <div className="tb-r">
+            <span className="faint" style={{ fontSize: 12.5 }}>{saving ? 'Saving…' : dirty ? 'Unsaved changes' : savedAt ? `Saved at ${savedAt}` : ''}</span>
+            {!signed && (
+              <>
+                {confirmSign && <button className="btn bq" type="button" onClick={() => setConfirmSign(false)}>Not yet</button>}
+                <button className="btn bg" type="button" disabled={saving} onClick={markSigned}><Icon name="check" />{confirmSign ? 'Confirm: client has signed' : 'Mark as signed'}</button>
+              </>
+            )}
+            <button className="btn bp" type="button" disabled={saving || !dirty || signed} onClick={save}>Save</button>
+          </div>
+        </div>
+        <div className="content">
+          <div className="page">
+            {detailError && <div className="form-error">{detailError}</div>}
+            {signed && <div className="notice ok" style={{ marginBottom: 16 }}>This contract is signed, so it’s now read-only.</div>}
+            <div className="editor-split">
+              <form className="panel" style={{ padding: 22 }} onSubmit={(e) => { e.preventDefault(); save(); }}>
+                <fieldset disabled={signed} style={{ border: 'none', minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <h1 className="h-section">Contract details</h1>
+                    <Pill status={signed ? 'signed' : 'unsigned'} label={signed ? 'Signed' : 'Awaiting signature'} />
+                  </div>
+                  <Field id="ct-client" label="Client">
+                    <select id="ct-client" className="fi fsel" value={form.client_id} onChange={pickClient(setForm, true)}>
+                      <option value="">No client linked</option>
+                      {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </Field>
+                  <div className="fi-row">
+                    <Field id="ct-email" label="Client email"><input id="ct-email" className="fi" type="email" value={form.client_email} onChange={edit('client_email')} /></Field>
+                    <Field id="ct-addr" label="Client address"><input id="ct-addr" className="fi" value={form.client_address} onChange={edit('client_address')} /></Field>
+                  </div>
+                  <div className="fi-row">
+                    <Field id="ct-service" label="Service"><input id="ct-service" className="fi" value={form.service} onChange={edit('service')} required /></Field>
+                    <Field id="ct-value" label="Project value"><input id="ct-value" className="fi" inputMode="decimal" value={form.value} onChange={edit('value')} /></Field>
+                  </div>
+                  <div className="fi-row">
+                    <Field id="ct-start" label="Start date"><input id="ct-start" className="fi" type="date" value={form.start_date} onChange={edit('start_date')} /></Field>
+                    <Field id="ct-dur" label="Duration"><input id="ct-dur" className="fi" value={form.duration} onChange={edit('duration')} placeholder="8 weeks" /></Field>
+                  </div>
+                  <Field id="ct-date" label="Contract date"><input id="ct-date" className="fi" type="date" value={form.date} onChange={edit('date')} /></Field>
+
+                  <h2 className="card-title" style={{ margin: '22px 0 4px' }}>Clauses</h2>
+                  <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>The service and value you enter above fill in automatically.</p>
+                  {form.clauses.map((clause, index) => (
+                    <Field key={clause.id || index} id={`clause-${index}`} label={`${index + 1}. ${clause.title}`}>
+                      <textarea id={`clause-${index}`} className="fi" value={clause.body} onChange={(e) => editClause(index, e.target.value)} />
+                    </Field>
+                  ))}
+                </fieldset>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+                  <button className="btn bd" type="button" onClick={handleDelete} disabled={deleting}>
+                    {deleting ? 'Deleting…' : confirmDelete ? 'Yes, delete contract' : 'Delete contract'}
+                  </button>
+                  {confirmDelete && <button className="btn bq" type="button" onClick={() => setConfirmDelete(false)}>Keep it</button>}
+                </div>
+              </form>
+
+              <ContractDocument contract={form} studioName={user?.studio_name} currency={currency} />
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  /* ── Contract list ────────────────────────────────────────── */
   return (
     <>
       <div className="topbar">
-        <div className="tb-title">Contracts</div>
-        <div className="tb-r"><button className="btn bp bsm" onClick={() => { setCreateError(''); setCreateOpen(true); }}>+ New Contract</button></div>
+        <h1 className="tb-title">Contracts</h1>
+        <div className="tb-r">
+          <div className="segmented" role="tablist" aria-label="Filter contracts">
+            {FILTERS.map((f) => (
+              <button key={f.key} type="button" role="tab" aria-selected={filter === f.key} className={filter === f.key ? 'on' : ''} onClick={() => setFilter(f.key)}>
+                {f.label} <span className="faint">{counts[f.key]}</span>
+              </button>
+            ))}
+          </div>
+          <button className="btn bp" type="button" onClick={openCreate}><Icon name="plus" />New contract</button>
+        </div>
       </div>
       <div className="content">
-        {pageError && <div className="card" style={{ padding: 16, color: 'var(--err)' }}>{pageError}</div>}
-        <div className="card">
-          <div className="card-h"><div className="card-title">Agreements</div></div>
-          <table className="tbl">
-            <thead><tr><th>Client</th><th>Service</th><th>Value</th><th>Start</th><th>Status</th><th></th></tr></thead>
-            <tbody>
-              {contracts.map((contract) => (
-                <tr key={contract.id} onClick={() => navigate(`/contracts/${contract.id}`)}>
-                  <td><b>{contract.client_name}</b></td>
-                  <td>{contract.service || '—'}</td>
-                  <td>{contract.value || '—'}</td>
-                  <td>{contract.start_date || '—'}</td>
-                  <td><Pill status={contract.signed ? 'signed' : 'pending'} label={contract.signed ? 'Signed' : 'Pending'} /></td>
-                  <td>
-                    {!contract.signed && (
-                      <button
-                        className="btn bg bxs"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          sign(contract);
-                        }}
-                      >
-                        Mark Signed
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {contracts.length === 0 && <tr><td colSpan="6" style={{ padding: 24, textAlign: 'center', color: 'var(--text-s)' }}>No contracts yet.</td></tr>}
-            </tbody>
-          </table>
+        <div className="page">
+          {pageError && <div className="form-error">{pageError}</div>}
+          <div className="panel tbl-wrap">
+            {rows.length ? (
+              <table className="tbl">
+                <thead><tr><th>Client</th><th>Service</th><th className="r">Value</th><th className="hide-sm">Dated</th><th>Status</th></tr></thead>
+                <tbody>
+                  {rows.map((c) => (
+                    <tr key={c.id} onClick={() => navigate(`/contracts/${c.id}`)}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <ClientMark name={c.client_name || '?'} color={colorFor(c.client_id)} size={28} />
+                          <span style={{ fontWeight: 500 }}>{c.client_name || 'No client linked'}</span>
+                        </div>
+                      </td>
+                      <td>{c.service || '—'}</td>
+                      <td className="r num" style={{ fontWeight: 500 }}>{c.value ? formatMoney(c.value, currency) : '—'}</td>
+                      <td className="hide-sm muted">{formatDate(c.date || c.created_at)}</td>
+                      <td><Pill status={c.signed ? 'signed' : 'unsigned'} label={c.signed ? 'Signed' : 'Awaiting signature'} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="empty" style={{ padding: 40 }}>
+                {!loaded && 'Loading…'}
+                {loaded && contracts.length === 0 && (
+                  <><b>No contracts yet.</b> Once a proposal is approved, create a contract from your standard clauses and track when it’s signed.
+                    <div style={{ marginTop: 14 }}><button className="btn bp" type="button" onClick={openCreate}><Icon name="plus" />New contract</button></div></>
+                )}
+                {loaded && contracts.length > 0 && (filter === 'signed' ? 'No signed contracts yet.' : 'Every contract is signed.')}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Create Contract"
+        title="New contract"
         footer={
           <>
             <button className="btn bg" type="button" onClick={() => setCreateOpen(false)}>Cancel</button>
-            <button className="btn bp" type="submit" form="contract-create-form" disabled={savingCreate}>{savingCreate ? 'Saving…' : 'Save Contract'}</button>
+            <button className="btn bp" type="submit" form="contract-create" disabled={savingCreate}>{savingCreate ? 'Creating…' : 'Create and open'}</button>
           </>
         }
       >
-        <form id="contract-create-form" onSubmit={handleCreate}>
-          {createError && <div style={{ marginBottom: 12, color: 'var(--err)' }}>{createError}</div>}
-          <div className="fc">
-            <div className="fc-label">Client</div>
-            <select
-              className="fi fsel"
-              value={createForm.client_id}
-              onChange={(event) => {
-                const client = clients.find((item) => item.id === event.target.value);
-                setCreateForm({
-                  ...createForm,
-                  client_id: event.target.value,
-                  client_name: client?.name || '',
-                  client_email: client?.email || '',
-                });
-              }}
-              required
-            >
-              <option value="" disabled>Select a client</option>
-              {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+        <form id="contract-create" onSubmit={handleCreate}>
+          {createError && <div className="form-error">{createError}</div>}
+          <Field id="ctc-client" label="Client">
+            <select id="ctc-client" className="fi fsel" value={createForm.client_id} onChange={pickClient(setCreateForm, false)}>
+              <option value="">No client linked</option>
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-          </div>
+          </Field>
           <div className="fi-row">
-            <div className="fc"><div className="fc-label">Service</div><input className="fi" value={createForm.service} onChange={(event) => setCreateForm({ ...createForm, service: event.target.value })} required /></div>
-            <div className="fc"><div className="fc-label">Value</div><input className="fi" value={createForm.value} onChange={(event) => setCreateForm({ ...createForm, value: event.target.value })} /></div>
+            <Field id="ctc-service" label="Service"><input id="ctc-service" className="fi" value={createForm.service} onChange={(e) => setCreateForm({ ...createForm, service: e.target.value })} placeholder="Brand Identity" required autoFocus /></Field>
+            <Field id="ctc-value" label="Project value"><input id="ctc-value" className="fi" inputMode="decimal" value={createForm.value} onChange={(e) => setCreateForm({ ...createForm, value: e.target.value })} placeholder="4500" /></Field>
           </div>
-          <div className="fi-row">
-            <div className="fc"><div className="fc-label">Start Date</div><input className="fi" type="date" value={createForm.start_date} onChange={(event) => setCreateForm({ ...createForm, start_date: event.target.value })} /></div>
-            <div className="fc"><div className="fc-label">Duration</div><input className="fi" value={createForm.duration} onChange={(event) => setCreateForm({ ...createForm, duration: event.target.value })} /></div>
-          </div>
-          <div className="fc"><div className="fc-label">Client Email</div><input className="fi" type="email" value={createForm.client_email} onChange={(event) => setCreateForm({ ...createForm, client_email: event.target.value })} /></div>
-          <div className="fc"><div className="fc-label">Client Address</div><textarea className="fi" value={createForm.client_address} onChange={(event) => setCreateForm({ ...createForm, client_address: event.target.value })} /></div>
+          <p className="muted" style={{ fontSize: 13 }}>It starts with your standard clauses. You can adjust them in the editor.</p>
         </form>
-      </Modal>
-
-      <Modal
-        open={Boolean(selectedContract)}
-        onClose={() => navigate('/contracts')}
-        title={selectedContract ? `${selectedContract.client_name} · ${selectedContract.service}` : 'Contract'}
-        footer={
-          <>
-            <button className="btn bg" type="button" onClick={() => navigate('/contracts')}>Close</button>
-            <button className="btn bg" type="button" onClick={handleDelete} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete'}</button>
-            <button className="btn bp" type="submit" form="contract-detail-form" disabled={savingDetail}>{savingDetail ? 'Saving…' : 'Save Changes'}</button>
-          </>
-        }
-      >
-        {selectedContract && (
-          <>
-            {detailError && <div style={{ marginBottom: 12, color: 'var(--err)' }}>{detailError}</div>}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{detailForm.value || '—'}</div><div className="stat-label">Contract Value</div></div>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{detailForm.start_date || '—'}</div><div className="stat-label">Start Date</div></div>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{detailForm.signed ? 'Signed' : 'Pending'}</div><div className="stat-label">Execution Status</div></div>
-            </div>
-            {!detailForm.signed && <button className="btn bp" type="button" style={{ marginBottom: 14 }} onClick={() => sign(selectedContract)}>Mark Signed</button>}
-            <form id="contract-detail-form" onSubmit={handleUpdate}>
-              <div className="fc">
-                <div className="fc-label">Client</div>
-                <select
-                  className="fi fsel"
-                  value={detailForm.client_id}
-                  onChange={(event) => {
-                    const client = clients.find((item) => item.id === event.target.value);
-                    setDetailForm({
-                      ...detailForm,
-                      client_id: event.target.value,
-                      client_name: client?.name || '',
-                      client_email: client?.email || detailForm.client_email,
-                    });
-                  }}
-                  required
-                >
-                  <option value="" disabled>Select a client</option>
-                  {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
-                </select>
-              </div>
-              <div className="fi-row">
-                <div className="fc"><div className="fc-label">Service</div><input className="fi" value={detailForm.service} onChange={(event) => setDetailForm({ ...detailForm, service: event.target.value })} required /></div>
-                <div className="fc"><div className="fc-label">Value</div><input className="fi" value={detailForm.value} onChange={(event) => setDetailForm({ ...detailForm, value: event.target.value })} /></div>
-              </div>
-              <div className="fi-row">
-                <div className="fc"><div className="fc-label">Start Date</div><input className="fi" type="date" value={detailForm.start_date} onChange={(event) => setDetailForm({ ...detailForm, start_date: event.target.value })} /></div>
-                <div className="fc"><div className="fc-label">Duration</div><input className="fi" value={detailForm.duration} onChange={(event) => setDetailForm({ ...detailForm, duration: event.target.value })} /></div>
-              </div>
-              <div className="fc"><div className="fc-label">Client Email</div><input className="fi" type="email" value={detailForm.client_email} onChange={(event) => setDetailForm({ ...detailForm, client_email: event.target.value })} /></div>
-              <div className="fc"><div className="fc-label">Client Address</div><textarea className="fi" value={detailForm.client_address} onChange={(event) => setDetailForm({ ...detailForm, client_address: event.target.value })} /></div>
-            </form>
-
-            <div style={{ marginTop: 14, padding: 16, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--card)' }}>
-              <div style={{ fontFamily: 'var(--font-heading)', fontSize: 18, fontWeight: 700, color: 'var(--navy)', marginBottom: 8 }}>
-                Contract Preview
-              </div>
-              {detailForm.clauses.map((clause) => (
-                <div key={clause.id} style={{ marginBottom: 12 }}>
-                  <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>{clause.title}</div>
-                  <div style={{ fontSize: 13, color: 'var(--text-s)' }}>{renderClauseBody(clause, detailForm)}</div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
       </Modal>
     </>
   );

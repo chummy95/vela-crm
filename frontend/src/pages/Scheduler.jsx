@@ -1,54 +1,165 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Modal from '../components/Modal';
+import Icon from '../components/Icon';
 import { clientsAPI, eventsAPI } from '../utils/api';
+import { daysFromToday, formatDate } from '../utils/format';
 
-function blankEvent(clientId = '') {
-  return { client_id: clientId, title: '', event_type: 'Call', date: '', time: '', duration: '', meeting_link: '' };
+const EVENT_TYPES = ['Call', 'Presentation', 'Review', 'Workshop', 'Photoshoot', 'Deadline', 'Studio time'];
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function iso(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function blankEvent(date = '') {
+  return { client_id: '', title: '', event_type: 'Call', date, time: '', duration: '', meeting_link: '' };
+}
+
+function byWhen(a, b) {
+  return `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`);
+}
+
+function dayHeading(date) {
+  const diff = daysFromToday(date);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff === -1) return 'Yesterday';
+  return formatDate(date, { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function EventFields({ id, value, onChange, onSubmit, clients, error }) {
+  const set = (key) => (e) => onChange({ ...value, [key]: e.target.value });
+  return (
+    <form id={id} onSubmit={onSubmit}>
+      {error && <div className="form-error">{error}</div>}
+      <div className="fc">
+        <label className="fc-label" htmlFor={`${id}-title`}>What’s happening</label>
+        <input id={`${id}-title`} className="fi" value={value.title} onChange={set('title')} placeholder="First draft presentation" required autoFocus />
+      </div>
+      <div className="fi-row">
+        <div className="fc">
+          <label className="fc-label" htmlFor={`${id}-client`}>Client</label>
+          <select id={`${id}-client`} className="fi fsel" value={value.client_id} onChange={set('client_id')}>
+            <option value="">No client (studio time)</option>
+            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        <div className="fc">
+          <label className="fc-label" htmlFor={`${id}-type`}>Type</label>
+          <select id={`${id}-type`} className="fi fsel" value={value.event_type} onChange={set('event_type')}>
+            {[...new Set([...EVENT_TYPES, value.event_type].filter(Boolean))].map((t) => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="fi-row">
+        <div className="fc">
+          <label className="fc-label" htmlFor={`${id}-date`}>Date</label>
+          <input id={`${id}-date`} className="fi" type="date" value={value.date} onChange={set('date')} required />
+        </div>
+        <div className="fc">
+          <label className="fc-label" htmlFor={`${id}-time`}>Time</label>
+          <input id={`${id}-time`} className="fi" type="time" value={value.time} onChange={set('time')} />
+        </div>
+      </div>
+      <div className="fi-row">
+        <div className="fc" style={{ marginBottom: 0 }}>
+          <label className="fc-label" htmlFor={`${id}-dur`}>Length in minutes</label>
+          <input id={`${id}-dur`} className="fi" inputMode="numeric" value={value.duration} onChange={set('duration')} placeholder="60" />
+        </div>
+        <div className="fc" style={{ marginBottom: 0 }}>
+          <label className="fc-label" htmlFor={`${id}-link`}>Meeting link</label>
+          <input id={`${id}-link`} className="fi" type="url" value={value.meeting_link} onChange={set('meeting_link')} placeholder="https://" />
+        </div>
+      </div>
+    </form>
+  );
 }
 
 export default function Scheduler() {
   const [events, setEvents] = useState([]);
   const [clients, setClients] = useState([]);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [selectedEventId, setSelectedEventId] = useState('');
-  const [createForm, setCreateForm] = useState(blankEvent());
-  const [detailForm, setDetailForm] = useState(blankEvent());
+  const [loaded, setLoaded] = useState(false);
   const [pageError, setPageError] = useState('');
+  const [month, setMonth] = useState(() => { const d = new Date(); d.setDate(1); return d; });
+  const [pickedDay, setPickedDay] = useState('');
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState(blankEvent());
   const [createError, setCreateError] = useState('');
-  const [detailError, setDetailError] = useState('');
   const [savingCreate, setSavingCreate] = useState(false);
+
+  const [selectedId, setSelectedId] = useState('');
+  const [detailForm, setDetailForm] = useState(blankEvent());
+  const [detailError, setDetailError] = useState('');
   const [savingDetail, setSavingDetail] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  async function load() {
-    const [eventRows, clientRows] = await Promise.all([eventsAPI.list(), clientsAPI.list()]);
-    setEvents(eventRows);
-    setClients(clientRows);
-    setCreateForm((current) => ({ ...current, client_id: current.client_id || clientRows[0]?.id || '' }));
-  }
-
   useEffect(() => {
-    load().catch((err) => setPageError(err.message));
+    Promise.all([eventsAPI.list(), clientsAPI.list()])
+      .then(([rows, clientRows]) => { setEvents([...rows].sort(byWhen)); setClients(clientRows); })
+      .catch((err) => setPageError(err.message))
+      .finally(() => setLoaded(true));
   }, []);
 
-  const selectedEvent = useMemo(
-    () => events.find((event) => event.id === selectedEventId) || null,
-    [events, selectedEventId]
-  );
+  const selected = useMemo(() => events.find((e) => e.id === selectedId) || null, [events, selectedId]);
 
   useEffect(() => {
-    if (!selectedEvent) return;
+    if (!selected) return;
     setDetailForm({
-      client_id: selectedEvent.client_id || '',
-      title: selectedEvent.title || '',
-      event_type: selectedEvent.event_type || 'Call',
-      date: selectedEvent.date || '',
-      time: selectedEvent.time || '',
-      duration: selectedEvent.duration || '',
-      meeting_link: selectedEvent.meeting_link || '',
+      client_id: selected.client_id || '', title: selected.title || '', event_type: selected.event_type || 'Call',
+      date: selected.date || '', time: selected.time || '', duration: selected.duration || '', meeting_link: selected.meeting_link || '',
     });
     setDetailError('');
-  }, [selectedEvent]);
+    setConfirmDelete(false);
+  }, [selected]);
+
+  const colorFor = (e) => clients.find((c) => c.id === e.client_id)?.color || e.color || 'var(--vela)';
+  const todayIso = iso(new Date());
+
+  const byDay = useMemo(() => {
+    const map = new Map();
+    events.forEach((e) => { if (!map.has(e.date)) map.set(e.date, []); map.get(e.date).push(e); });
+    return map;
+  }, [events]);
+
+  const grid = useMemo(() => {
+    const first = new Date(month);
+    const offset = (first.getDay() + 6) % 7;
+    const start = new Date(first);
+    start.setDate(1 - offset);
+    const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+    const cells = Math.ceil((offset + daysInMonth) / 7) * 7;
+    return Array.from({ length: cells }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return { date: iso(d), day: d.getDate(), inMonth: d.getMonth() === month.getMonth() };
+    });
+  }, [month]);
+
+  const agenda = useMemo(() => {
+    const list = pickedDay ? events.filter((e) => e.date === pickedDay) : events.filter((e) => e.date >= todayIso);
+    const groups = [];
+    list.forEach((e) => {
+      const last = groups[groups.length - 1];
+      if (last && last.date === e.date) last.items.push(e);
+      else groups.push({ date: e.date, items: [e] });
+    });
+    return groups;
+  }, [events, pickedDay, todayIso]);
+
+  function shiftMonth(delta) {
+    setMonth((m) => { const d = new Date(m); d.setMonth(d.getMonth() + delta); return d; });
+  }
+
+  function openCreate(date = pickedDay || '') {
+    setCreateForm(blankEvent(date));
+    setCreateError('');
+    setCreateOpen(true);
+  }
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -56,9 +167,8 @@ export default function Scheduler() {
     setCreateError('');
     try {
       const created = await eventsAPI.create(createForm);
-      setEvents((prev) => [...prev, created].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)));
+      setEvents((prev) => [...prev, created].sort(byWhen));
       setCreateOpen(false);
-      setSelectedEventId(created.id);
     } catch (err) {
       setCreateError(err.message);
     } finally {
@@ -68,16 +178,12 @@ export default function Scheduler() {
 
   async function handleUpdate(event) {
     event.preventDefault();
-    if (!selectedEvent) return;
     setSavingDetail(true);
     setDetailError('');
     try {
-      const updated = await eventsAPI.update(selectedEvent.id, detailForm);
-      setEvents((prev) =>
-        prev
-          .map((item) => (item.id === updated.id ? updated : item))
-          .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
-      );
+      const updated = await eventsAPI.update(selected.id, detailForm);
+      setEvents((prev) => prev.map((e) => (e.id === selected.id ? { ...e, ...(updated || detailForm) } : e)).sort(byWhen));
+      setSelectedId('');
     } catch (err) {
       setDetailError(err.message);
     } finally {
@@ -85,135 +191,139 @@ export default function Scheduler() {
     }
   }
 
-  async function handleDelete(id = selectedEvent?.id) {
-    if (!id) return;
+  async function handleDelete() {
+    if (!confirmDelete) { setConfirmDelete(true); return; }
     setDeleting(true);
-    setDetailError('');
     try {
-      await eventsAPI.remove(id);
-      setEvents((prev) => prev.filter((item) => item.id !== id));
-      setSelectedEventId('');
+      await eventsAPI.remove(selected.id);
+      setEvents((prev) => prev.filter((e) => e.id !== selected.id));
+      setSelectedId('');
     } catch (err) {
       setDetailError(err.message);
-      setPageError(err.message);
     } finally {
       setDeleting(false);
     }
   }
 
+  const monthLabel = month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+
   return (
     <>
       <div className="topbar">
-        <div className="tb-title">Scheduler</div>
-        <div className="tb-r"><button className="btn bp bsm" onClick={() => { setCreateError(''); setCreateForm(blankEvent(clients[0]?.id || '')); setCreateOpen(true); }}>+ New Event</button></div>
+        <h1 className="tb-title">Schedule</h1>
+        <div className="tb-r"><button className="btn bp" type="button" onClick={() => openCreate()}><Icon name="plus" />Book time</button></div>
       </div>
       <div className="content">
-        {pageError && <div className="card" style={{ padding: 16, color: 'var(--err)' }}>{pageError}</div>}
-        <div className="card">
-          <div className="card-h"><div className="card-title">Upcoming</div></div>
-          <table className="tbl">
-            <thead><tr><th>Title</th><th>Client</th><th>Date</th><th>Time</th><th>Type</th><th></th></tr></thead>
-            <tbody>
-              {events.map((event) => (
-                <tr key={event.id} onClick={() => setSelectedEventId(event.id)}>
-                  <td><b>{event.title}</b></td>
-                  <td>{event.client_name || 'Internal'}</td>
-                  <td>{event.date}</td>
-                  <td>{event.time || '—'}</td>
-                  <td>{event.event_type || '—'}</td>
-                  <td>
+        <div className="page">
+          {pageError && <div className="form-error">{pageError}</div>}
+          <div className="split cal-split">
+            <section className="panel" aria-label="Calendar" style={{ padding: 18 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <h2 className="h-section">{monthLabel}</h2>
+                <div className="tb-r">
+                  <button className="btn bq bsm" type="button" onClick={() => { const d = new Date(); d.setDate(1); setMonth(d); setPickedDay(''); }}>Today</button>
+                  <button className="btn bg bsm" type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month"><Icon name="back" /></button>
+                  <button className="btn bg bsm" type="button" onClick={() => shiftMonth(1)} aria-label="Next month"><Icon name="forward" /></button>
+                </div>
+              </div>
+              <div className="cal" role="grid" aria-label={monthLabel}>
+                {WEEKDAYS.map((w) => <div key={w} className="cal-wd" role="columnheader">{w}</div>)}
+                {grid.map((cell) => {
+                  const dayEvents = byDay.get(cell.date) || [];
+                  const cls = ['cal-day', cell.inMonth ? '' : 'out', cell.date === todayIso ? 'today' : '', cell.date === pickedDay ? 'picked' : ''].join(' ');
+                  return (
                     <button
-                      className="btn bg bxs"
-                      onClick={(clickEvent) => {
-                        clickEvent.stopPropagation();
-                        handleDelete(event.id);
-                      }}
+                      key={cell.date}
+                      type="button"
+                      className={cls}
+                      onClick={() => setPickedDay(cell.date === pickedDay ? '' : cell.date)}
+                      aria-label={`${formatDate(cell.date, { weekday: 'long', day: 'numeric', month: 'long' })}${dayEvents.length ? `, ${dayEvents.length} booked` : ''}`}
+                      aria-pressed={cell.date === pickedDay}
                     >
-                      Delete
+                      <span className="cal-num">{cell.day}</span>
+                      <span className="cal-dots">
+                        {dayEvents.slice(0, 3).map((e) => <span key={e.id} style={{ background: colorFor(e) }} />)}
+                      </span>
                     </button>
-                  </td>
-                </tr>
-              ))}
-              {events.length === 0 && <tr><td colSpan="6" style={{ padding: 24, textAlign: 'center', color: 'var(--text-s)' }}>No events scheduled.</td></tr>}
-            </tbody>
-          </table>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="panel" aria-labelledby="agenda-h">
+              <div className="card-h">
+                <h2 id="agenda-h" className="card-title">{pickedDay ? dayHeading(pickedDay) : 'Coming up'}</h2>
+                {pickedDay
+                  ? <button className="btn bq bsm" type="button" onClick={() => setPickedDay('')}>Show all upcoming</button>
+                  : null}
+              </div>
+              {agenda.length ? (
+                <div style={{ paddingBottom: 8 }}>
+                  {agenda.map((group) => (
+                    <div key={group.date}>
+                      {!pickedDay && <div className={`agenda-day${group.date === todayIso ? ' today' : ''}`}>{dayHeading(group.date)}</div>}
+                      {group.items.map((e) => (
+                        <button key={e.id} type="button" className="agenda-item agenda-btn" onClick={() => setSelectedId(e.id)}>
+                          <span className="agenda-time">{e.time || 'All day'}</span>
+                          <span style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left' }}>
+                            <span className="signal" style={{ background: colorFor(e), marginTop: 6 }} />
+                            <span>
+                              <span className="row-title" style={{ display: 'block' }}>{e.title || e.event_type}</span>
+                              <span className="row-sub" style={{ display: 'block' }}>
+                                {[e.client_name || 'Studio time', e.event_type, e.duration ? `${e.duration} min` : ''].filter(Boolean).join(', ')}
+                              </span>
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty">
+                  {!loaded ? 'Loading…' : pickedDay
+                    ? <>Nothing booked on this day. <button type="button" className="btn bq bxs" style={{ padding: 0, color: 'var(--vela)' }} onClick={() => openCreate(pickedDay)}>Book time</button></>
+                    : 'Nothing booked ahead. Use Book time to add a call, review or deadline.'}
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       </div>
 
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Create Event"
+        title="Book time"
         footer={
           <>
             <button className="btn bg" type="button" onClick={() => setCreateOpen(false)}>Cancel</button>
-            <button className="btn bp" type="submit" form="event-create-form" disabled={savingCreate}>{savingCreate ? 'Saving…' : 'Save Event'}</button>
+            <button className="btn bp" type="submit" form="event-create" disabled={savingCreate}>{savingCreate ? 'Booking…' : 'Book it'}</button>
           </>
         }
       >
-        <form id="event-create-form" onSubmit={handleCreate}>
-          {createError && <div style={{ marginBottom: 12, color: 'var(--err)' }}>{createError}</div>}
-          <div className="fc">
-            <div className="fc-label">Client</div>
-            <select className="fi fsel" value={createForm.client_id} onChange={(event) => setCreateForm({ ...createForm, client_id: event.target.value })}>
-              <option value="">No client</option>
-              {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
-            </select>
-          </div>
-          <div className="fc"><div className="fc-label">Title</div><input className="fi" value={createForm.title} onChange={(event) => setCreateForm({ ...createForm, title: event.target.value })} required /></div>
-          <div className="fi-row">
-            <div className="fc"><div className="fc-label">Date</div><input className="fi" type="date" value={createForm.date} onChange={(event) => setCreateForm({ ...createForm, date: event.target.value })} required /></div>
-            <div className="fc"><div className="fc-label">Time</div><input className="fi" type="time" value={createForm.time} onChange={(event) => setCreateForm({ ...createForm, time: event.target.value })} /></div>
-          </div>
-          <div className="fi-row">
-            <div className="fc"><div className="fc-label">Event Type</div><input className="fi" value={createForm.event_type} onChange={(event) => setCreateForm({ ...createForm, event_type: event.target.value })} /></div>
-            <div className="fc"><div className="fc-label">Duration</div><input className="fi" value={createForm.duration} onChange={(event) => setCreateForm({ ...createForm, duration: event.target.value })} /></div>
-          </div>
-          <div className="fc"><div className="fc-label">Meeting Link</div><input className="fi" value={createForm.meeting_link} onChange={(event) => setCreateForm({ ...createForm, meeting_link: event.target.value })} /></div>
-        </form>
+        <EventFields id="event-create" value={createForm} onChange={setCreateForm} onSubmit={handleCreate} clients={clients} error={createError} />
       </Modal>
 
       <Modal
-        open={Boolean(selectedEvent)}
-        onClose={() => setSelectedEventId('')}
-        title={selectedEvent ? selectedEvent.title : 'Event'}
+        open={Boolean(selected)}
+        onClose={() => setSelectedId('')}
+        title={selected?.title || 'Booking'}
         footer={
           <>
-            <button className="btn bg" type="button" onClick={() => setSelectedEventId('')}>Close</button>
-            <button className="btn bg" type="button" onClick={() => handleDelete()} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete'}</button>
-            <button className="btn bp" type="submit" form="event-detail-form" disabled={savingDetail}>{savingDetail ? 'Saving…' : 'Save Changes'}</button>
+            <button className="btn bd spacer" type="button" onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Removing…' : confirmDelete ? 'Yes, cancel booking' : 'Cancel booking'}
+            </button>
+            {confirmDelete && <button className="btn bq" type="button" onClick={() => setConfirmDelete(false)}>Keep it</button>}
+            <button className="btn bg" type="button" onClick={() => setSelectedId('')}>Close</button>
+            <button className="btn bp" type="submit" form="event-edit" disabled={savingDetail}>{savingDetail ? 'Saving…' : 'Save changes'}</button>
           </>
         }
       >
-        {selectedEvent && (
-          <>
-            {detailError && <div style={{ marginBottom: 12, color: 'var(--err)' }}>{detailError}</div>}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{detailForm.date || '—'}</div><div className="stat-label">Event Date</div></div>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{detailForm.time || '—'}</div><div className="stat-label">Start Time</div></div>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{detailForm.event_type || '—'}</div><div className="stat-label">Event Type</div></div>
-            </div>
-            <form id="event-detail-form" onSubmit={handleUpdate}>
-              <div className="fc">
-                <div className="fc-label">Client</div>
-                <select className="fi fsel" value={detailForm.client_id} onChange={(event) => setDetailForm({ ...detailForm, client_id: event.target.value })}>
-                  <option value="">No client</option>
-                  {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
-                </select>
-              </div>
-              <div className="fc"><div className="fc-label">Title</div><input className="fi" value={detailForm.title} onChange={(event) => setDetailForm({ ...detailForm, title: event.target.value })} required /></div>
-              <div className="fi-row">
-                <div className="fc"><div className="fc-label">Date</div><input className="fi" type="date" value={detailForm.date} onChange={(event) => setDetailForm({ ...detailForm, date: event.target.value })} required /></div>
-                <div className="fc"><div className="fc-label">Time</div><input className="fi" type="time" value={detailForm.time} onChange={(event) => setDetailForm({ ...detailForm, time: event.target.value })} /></div>
-              </div>
-              <div className="fi-row">
-                <div className="fc"><div className="fc-label">Event Type</div><input className="fi" value={detailForm.event_type} onChange={(event) => setDetailForm({ ...detailForm, event_type: event.target.value })} /></div>
-                <div className="fc"><div className="fc-label">Duration</div><input className="fi" value={detailForm.duration} onChange={(event) => setDetailForm({ ...detailForm, duration: event.target.value })} /></div>
-              </div>
-              <div className="fc"><div className="fc-label">Meeting Link</div><input className="fi" value={detailForm.meeting_link} onChange={(event) => setDetailForm({ ...detailForm, meeting_link: event.target.value })} /></div>
-            </form>
-          </>
+        {selected?.meeting_link && (
+          <a className="btn bg" href={selected.meeting_link} target="_blank" rel="noreferrer" style={{ marginBottom: 16 }}><Icon name="link" />Open meeting link</a>
         )}
+        <EventFields id="event-edit" value={detailForm} onChange={setDetailForm} onSubmit={handleUpdate} clients={clients} error={detailError} />
       </Modal>
     </>
   );

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { messagesAPI } from '../utils/api';
 
@@ -6,81 +6,82 @@ function formatTime(value) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return date.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 export default function PortalMessages() {
   const { user } = useAuth();
   const [messages, setMessages] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
+  const endRef = useRef(null);
 
   useEffect(() => {
-    messagesAPI.thread(user?.client_id).then(setMessages).catch((loadError) => setError(loadError.message));
+    messagesAPI.thread(user?.client_id).then(setMessages).catch((err) => setError(err.message)).finally(() => setLoaded(true));
   }, [user?.client_id]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length]);
 
   async function handleSend(event) {
     event.preventDefault();
-    if (!draft.trim()) {
-      return;
-    }
-
+    if (!draft.trim()) return;
+    setSending(true);
     try {
-      setSending(true);
       const sent = await messagesAPI.send(user?.client_id, draft.trim());
       setMessages((current) => [...current, sent]);
       setDraft('');
       setError('');
-    } catch (sendError) {
-      setError(sendError.message);
+    } catch (err) {
+      setError(err.message);
     } finally {
       setSending(false);
     }
   }
 
+  function onKeyDown(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSend(event);
+    }
+  }
+
   return (
     <>
-      <div className="topbar">
-        <div className="tb-title">Messages</div>
-      </div>
-      <div className="content">
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: '70vh' }}>
-          <div className="card-h">
-            <div className="card-title">Studio Conversation</div>
-            <div style={{ fontSize: 12, color: 'var(--text-s)' }}>{user?.client_name || user?.name || 'Client account'}</div>
-          </div>
-          <div style={{ padding: 18, flex: 1, overflowY: 'auto' }}>
-            {error && <div style={{ marginBottom: 12, color: 'var(--err)' }}>{error}</div>}
-            {!messages.length && <div style={{ color: 'var(--text-s)', fontSize: 13 }}>No messages yet. Send your first note to the studio below.</div>}
-            {messages.map((message) => (
-              <div key={message.id} style={{ marginBottom: 12, textAlign: message.outbound ? 'left' : 'right' }}>
-                <div
-                  style={{
-                    display: 'inline-block',
-                    background: message.outbound ? 'var(--navy-pale)' : 'var(--navy)',
-                    color: message.outbound ? 'var(--text)' : '#fff',
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    maxWidth: '78%',
-                  }}
-                >
-                  <div style={{ fontSize: 13, lineHeight: 1.5 }}>{message.text}</div>
-                  <div style={{ marginTop: 6, fontSize: 10.5, opacity: 0.8 }}>{formatTime(message.sent_at)}</div>
+      <div className="topbar"><h1 className="tb-title">Messages</h1></div>
+      <div className="content chat-content">
+        {error && <div className="form-error">{error}</div>}
+        <section className="panel chat-thread" style={{ flex: 1, minHeight: 480, maxWidth: 860, width: '100%' }} aria-label="Conversation with the studio">
+          <header className="card-h">
+            <div>
+              <div className="card-title">The studio</div>
+              <div className="muted" style={{ fontSize: 12.5 }}>Questions, feedback and updates about your project</div>
+            </div>
+          </header>
+          <div className="chat-scroll">
+            {loaded && !messages.length && <div className="empty">No messages yet. Say hello, or ask anything about your project.</div>}
+            {messages.map((m) => {
+              const mine = !m.outbound;
+              return (
+                <div key={m.id} className={`bubble-row${mine ? ' out' : ''}`}>
+                  <div className="bubble">
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+                    <div className="bubble-time">{mine ? 'You' : 'Studio'}, {formatTime(m.sent_at)}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
+            <div ref={endRef} />
           </div>
-          <form onSubmit={handleSend} style={{ padding: 18, borderTop: '1px solid var(--border)', display: 'flex', gap: 10 }}>
-            <input className="fi" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Send a note to the studio…" disabled={sending} />
+          <form onSubmit={handleSend} className="chat-compose">
+            <label className="sr-only" htmlFor="portal-draft">Message</label>
+            <textarea id="portal-draft" className="fi" rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKeyDown} placeholder="Write a message" disabled={sending} style={{ minHeight: 44, resize: 'none' }} />
             <button className="btn bp" type="submit" disabled={sending || !draft.trim()}>{sending ? 'Sending…' : 'Send'}</button>
           </form>
-        </div>
+        </section>
       </div>
     </>
   );

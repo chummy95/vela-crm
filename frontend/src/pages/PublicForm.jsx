@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import BrandLogo from '../components/BrandLogo';
 import { formsAPI } from '../utils/api';
 
 function fieldName(field, index) {
@@ -70,82 +69,70 @@ export default function PublicForm() {
     }
   }
 
-  return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #f6efe6 0%, #fffdf8 100%)', padding: '40px 16px' }}>
-      <div style={{ maxWidth: 760, margin: '0 auto' }}>
-        <div style={{ marginBottom: 24 }}>
-          <BrandLogo variant="blackTagline" width={240} alt="Vela CRM" style={{ marginBottom: 12 }} />
-          <div style={{ marginTop: 10, color: 'var(--text-s)', fontSize: 15 }}>
-            Share a few details about your project and the studio will get back to you.
-          </div>
-        </div>
+  const setValue = (name) => (event) => setValues((current) => ({ ...current, [name]: event.target.value }));
 
-        <div className="card" style={{ padding: 24 }}>
-          {loading && <div style={{ color: 'var(--text-s)' }}>Loading form…</div>}
-          {!loading && error && <div style={{ marginBottom: 16, color: 'var(--err)' }}>{error}</div>}
+  return (
+    <div className="public-form">
+      <div className="public-form-inner">
+        <header style={{ marginBottom: 28 }}>
+          <h1 className="h-display" style={{ fontSize: 36 }}>Tell us about your project</h1>
+          <p className="lede" style={{ marginTop: 10 }}>A few details help the studio understand what you need. You’ll hear back personally, usually within two working days.</p>
+        </header>
+
+        <div className="panel" style={{ padding: 28 }}>
+          {loading && <div className="muted">Loading the form…</div>}
+          {!loading && error && <div className="form-error" role="alert">{error}</div>}
+
           {!loading && submitted && (
-            <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: 'var(--ok-bg)', color: 'var(--ok)' }}>
-              Thanks. Your enquiry has been submitted successfully.
+            <div role="status">
+              <h2 className="h-section">Thank you, your enquiry is in.</h2>
+              <p className="muted" style={{ marginTop: 6 }}>The studio will read it and reply to the email you gave.</p>
+              <button className="btn bg" type="button" style={{ marginTop: 18 }} onClick={() => setSubmitted(false)}>Send another enquiry</button>
             </div>
           )}
 
-          {!loading && !error && (
+          {!loading && !submitted && sortedFields.length > 0 && (
             <form onSubmit={handleSubmit}>
               {sortedFields.map((field, index) => {
                 const name = fieldName(field, index);
+                const id = `pf-${name}`;
                 const isRequired = Boolean(field.required);
-                const options = String(field.options || '')
-                  .split(',')
-                  .map((option) => option.trim())
-                  .filter(Boolean);
-
+                const options = String(field.options || '').split(',').map((o) => o.trim()).filter(Boolean);
                 return (
-                  <div className="fc" key={name}>
-                    <div className="fc-label">{field.label}{isRequired ? ' *' : ''}</div>
+                  <div className="fc" key={name} style={{ marginBottom: 18 }}>
+                    <label className="fc-label" htmlFor={id} style={{ fontSize: 13.5, color: 'var(--ink)' }}>
+                      {field.label}{!isRequired && <span className="faint" style={{ fontWeight: 400 }}> (optional)</span>}
+                    </label>
                     {field.field_type === 'textarea' && (
-                      <textarea
-                        className="fi"
-                        rows="5"
-                        value={values[name] || ''}
-                        onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.value }))}
-                        required={isRequired}
-                        style={{ resize: 'vertical', minHeight: 120 }}
-                      />
+                      <textarea id={id} className="fi" rows="5" value={values[name] || ''} onChange={setValue(name)} required={isRequired} style={{ minHeight: 130 }} />
                     )}
                     {field.field_type === 'select' && (
-                      <select
-                        className="fi fsel"
-                        value={values[name] || ''}
-                        onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.value }))}
-                        required={isRequired}
-                      >
-                        <option value="">Select an option</option>
-                        {options.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
+                      <select id={id} className="fi fsel" value={values[name] || ''} onChange={setValue(name)} required={isRequired}>
+                        <option value="">Choose one</option>
+                        {options.map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
                     )}
                     {!['textarea', 'select'].includes(field.field_type) && (
                       <input
+                        id={id}
                         className="fi"
                         type={field.field_type === 'email' ? 'email' : 'text'}
+                        autoComplete={field.field_type === 'email' ? 'email' : /name/i.test(field.label) ? 'name' : undefined}
                         value={values[name] || ''}
-                        onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.value }))}
+                        onChange={setValue(name)}
                         required={isRequired}
                       />
                     )}
                   </div>
                 );
               })}
-
-              <button className="btn bp" type="submit" disabled={submitting} style={{ marginTop: 10 }}>
-                {submitting ? 'Submitting…' : 'Send Enquiry'}
+              <button className="btn bp" type="submit" disabled={submitting} style={{ padding: '11px 20px', fontSize: 14 }}>
+                {submitting ? 'Sending…' : 'Send enquiry'}
               </button>
             </form>
           )}
         </div>
+        <p className="faint" style={{ fontSize: 12, marginTop: 18, textAlign: 'center' }}>Sent securely with Vela</p>
       </div>
     </div>
   );
