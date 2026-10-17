@@ -3,12 +3,12 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const defaultFirebaseConfig = {
-  apiKey: 'AIzaSyDP-_qJDifpCQ8bsfTv2pbXcmIIgTDLO1Y',
-  authDomain: 'vela-crm-20260420.firebaseapp.com',
-  projectId: 'vela-crm-20260420',
-  storageBucket: 'vela-crm-20260420.firebasestorage.app',
-  messagingSenderId: '121081847097',
-  appId: '1:121081847097:web:d4dfe93c22d04635075ce8',
+  apiKey: 'AIzaSyA9AjYIEqIxRrLMnybMCEQHW17X5oVcoZU',
+  authDomain: 'vela-crm-2ca57.firebaseapp.com',
+  projectId: 'vela-crm-2ca57',
+  storageBucket: 'vela-crm-2ca57.firebasestorage.app',
+  messagingSenderId: '671276043141',
+  appId: '1:671276043141:web:0d17260abb55711c0ad2ec',
 };
 
 const firebaseConfig = {

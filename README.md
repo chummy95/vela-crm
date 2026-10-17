@@ -23,7 +23,7 @@ Vela is now a Firebase-backed CRM for creative studios. The active runtime is th
 - `frontend/.env.example`
 
 ## Firebase Console Setup
-Use Firebase project `vela-crm-20260420`.
+Use Firebase project `vela-crm-2ca57`.
 
 ### 1. Add a Web App
 In Firebase console:
@@ -33,12 +33,12 @@ In Firebase console:
 
 Example:
 ```bash
-VITE_FIREBASE_API_KEY=AIzaSyDP-_qJDifpCQ8bsfTv2pbXcmIIgTDLO1Y
-VITE_FIREBASE_AUTH_DOMAIN=vela-crm-20260420.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=vela-crm-20260420
-VITE_FIREBASE_STORAGE_BUCKET=vela-crm-20260420.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=121081847097
-VITE_FIREBASE_APP_ID=1:121081847097:web:d4dfe93c22d04635075ce8
+VITE_FIREBASE_API_KEY=AIzaSyA9AjYIEqIxRrLMnybMCEQHW17X5oVcoZU
+VITE_FIREBASE_AUTH_DOMAIN=vela-crm-2ca57.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=vela-crm-2ca57
+VITE_FIREBASE_STORAGE_BUCKET=vela-crm-2ca57.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=671276043141
+VITE_FIREBASE_APP_ID=1:671276043141:web:0d17260abb55711c0ad2ec
 ```
 
 ### 2. Enable Authentication
