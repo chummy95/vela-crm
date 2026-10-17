@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import BrandLogo from '../components/BrandLogo';
+import AuthLayout from '../components/AuthLayout';
 import { useAuth } from '../hooks/useAuth';
 import { authAPI, USER_ROLES } from '../utils/api';
 
@@ -45,53 +45,51 @@ export default function Login() {
     }
   }
 
+  function switchMode(next) {
+    setMode(next);
+    setError('');
+    setNotice('');
+  }
+
   return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--navy)' }}>
-      <div className="auth-card" style={{ background:'#fff', borderRadius:'16px', padding:'40px', width:'400px', boxShadow:'0 24px 60px rgba(0,0,0,.25)' }}>
-        <BrandLogo variant="blueTagline" width={126} alt="Vela CRM" style={{ margin:'0 auto 14px' }} />
-        <div className="auth-copy" style={{ fontSize:'13px', marginBottom:'28px' }}>
-          {mode === 'login' ? 'Welcome back' : 'Create your studio account'}
+    <AuthLayout
+      eyebrow="Studio"
+      title={mode === 'login' ? 'Welcome back' : 'Create your studio'}
+      intro={mode === 'login' ? 'Sign in to your studio.' : 'Set up your studio account. You can invite clients to their own portal later.'}
+      footer={
+        <>
+          <div>
+            {mode === 'login'
+              ? <>New to Vela? <button type="button" className="auth-link" onClick={() => switchMode('register')}>Create a studio account</button></>
+              : <>Already have an account? <button type="button" className="auth-link" onClick={() => switchMode('login')}>Sign in</button></>}
+          </div>
+          <div style={{ marginTop: 8 }}>Are you a client? <button type="button" className="auth-link" onClick={() => navigate('/portal/login')}>Go to the client portal</button></div>
+        </>
+      }
+    >
+      {(error || authError) && <div className="form-error" role="alert">{error || authError}</div>}
+      {notice && <div className="notice ok" role="status" style={{ marginBottom: 14 }}>{notice}</div>}
+
+      <form onSubmit={handleSubmit}>
+        {mode === 'register' && (
+          <>
+            <div className="fc"><label className="fc-label" htmlFor="reg-name">Your name</label><input id="reg-name" className="fi" autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+            <div className="fc"><label className="fc-label" htmlFor="reg-studio">Studio name</label><input id="reg-studio" className="fi" autoComplete="organization" value={form.studio_name} onChange={(e) => setForm({ ...form, studio_name: e.target.value })} /></div>
+          </>
+        )}
+        <div className="fc"><label className="fc-label" htmlFor="auth-email">Email</label><input id="auth-email" className="fi" type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></div>
+        <div className="fc">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <label className="fc-label" htmlFor="auth-pass">Password</label>
+            {mode === 'login' && <button type="button" className="auth-link" style={{ fontSize: 12.5 }} onClick={handleResetPassword} disabled={loading}>Forgot password?</button>}
+          </div>
+          <input id="auth-pass" className="fi" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={mode === 'register' ? 6 : undefined} />
+          {mode === 'register' && <div className="faint" style={{ fontSize: 12, marginTop: 4 }}>At least 6 characters.</div>}
         </div>
-
-        {(error || authError) && <div style={{ background:'var(--err-bg)', color:'var(--err)', padding:'10px 13px', borderRadius:'8px', fontSize:'13px', marginBottom:'16px' }}>{error || authError}</div>}
-        {notice && <div style={{ background:'rgba(41, 128, 90, 0.12)', color:'#236241', padding:'10px 13px', borderRadius:'8px', fontSize:'13px', marginBottom:'16px' }}>{notice}</div>}
-
-        <form onSubmit={handleSubmit}>
-          {mode === 'register' && <>
-            <div className="fc"><div className="fc-label">Your Name</div><input className="fi" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} required /></div>
-            <div className="fc"><div className="fc-label">Studio Name</div><input className="fi" value={form.studio_name} onChange={e=>setForm({...form,studio_name:e.target.value})} /></div>
-          </>}
-          <div className="fc"><div className="fc-label">Email</div><input className="fi" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} required /></div>
-          <div className="fc"><div className="fc-label">Password</div><input className="fi" type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} required /></div>
-          {mode === 'login' && (
-            <div style={{ marginTop:'-4px', marginBottom:'14px', textAlign:'right' }}>
-              <button
-                type="button"
-                onClick={handleResetPassword}
-                style={{ background:'none', border:'none', padding:0, color:'var(--brand-blue)', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
-                disabled={loading}
-              >
-                Forgot password?
-              </button>
-            </div>
-          )}
-          <button className="btn bp" style={{ width:'100%', justifyContent:'center', padding:'11px', marginTop:'8px', fontSize:'14px' }} disabled={loading}>
-            {loading ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create Account'}
-          </button>
-        </form>
-
-        <div className="auth-link-row" style={{ marginTop:'16px', textAlign:'center', fontSize:'13px' }}>
-          {mode === 'login' ? <>No account? <span style={{ color:'var(--brand-blue)', fontWeight:600, cursor:'pointer' }} onClick={()=>{ setMode('register'); setError(''); setNotice(''); }}>Sign up</span></> : <>Have an account? <span style={{ color:'var(--brand-blue)', fontWeight:600, cursor:'pointer' }} onClick={()=>{ setMode('login'); setError(''); setNotice(''); }}>Sign in</span></>}
-        </div>
-
-        <div className="auth-link-row" style={{ marginTop:'12px', textAlign:'center', fontSize:'12px' }}>
-          Client access? <span style={{ color:'var(--brand-blue)', fontWeight:600, cursor:'pointer' }} onClick={() => navigate('/portal/login')}>Open client portal</span>
-        </div>
-
-        <div className="auth-note" style={{ marginTop:'16px', padding:'12px', background:'var(--card)', borderRadius:'8px', fontSize:'11.5px' }}>
-          Studio owners sign in here. Client portal accounts use a separate login linked to the same Firebase project.
-        </div>
-      </div>
-    </div>
+        <button className="btn bp" type="submit" style={{ width: '100%', justifyContent: 'center', padding: '11px', marginTop: 6, fontSize: 14 }} disabled={loading}>
+          {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create studio account'}
+        </button>
+      </form>
+    </AuthLayout>
   );
 }

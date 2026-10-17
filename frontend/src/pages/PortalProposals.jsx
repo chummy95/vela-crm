@@ -1,87 +1,67 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import Modal from '../components/Modal';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import Icon from '../components/Icon';
 import Pill from '../components/Pill';
+import { ProposalDocument } from '../components/Documents';
 import { proposalsAPI } from '../utils/api';
-
-function toItems(value) {
-  return Array.isArray(value) ? value : [];
-}
+import { formatDate, formatMoney } from '../utils/format';
 
 export default function PortalProposals() {
   const navigate = useNavigate();
   const params = useParams();
-  const routeProposalId = (params['*'] || '').split('/')[0] || '';
+  const routeId = (params['*'] || '').split('/')[0] || '';
   const [proposals, setProposals] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    proposalsAPI.list().then(setProposals).catch((loadError) => setError(loadError.message));
+    // Drafts stay private to the studio until they're sent.
+    proposalsAPI.list().then((rows) => setProposals(rows.filter((p) => (p.status || 'draft') !== 'draft'))).catch((err) => setError(err.message)).finally(() => setLoaded(true));
   }, []);
 
-  const selectedProposal = useMemo(
-    () => proposals.find((proposal) => proposal.id === routeProposalId) || null,
-    [proposals, routeProposalId]
-  );
+  const selected = useMemo(() => proposals.find((p) => p.id === routeId) || null, [proposals, routeId]);
+
+  if (routeId) {
+    return (
+      <>
+        <div className="topbar">
+          <nav className="tb-crumb" aria-label="Breadcrumb"><Link to="/portal/proposals"><Icon name="back" size={16} />Proposals</Link></nav>
+          {selected && <div className="tb-r"><button className="btn bg" type="button" onClick={() => navigate('/portal/messages')}><Icon name="message" />Ask a question</button></div>}
+        </div>
+        <div className="content">
+          <div className="page" style={{ maxWidth: 820 }}>
+            {selected ? <ProposalDocument proposal={selected} /> : <div className="panel empty" style={{ padding: 40 }}>{loaded ? 'This proposal isn’t available.' : 'Loading…'}</div>}
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
-      <div className="topbar">
-        <div className="tb-title">Proposals</div>
-      </div>
+      <div className="topbar"><h1 className="tb-title">Proposals</h1></div>
       <div className="content">
-        {error && <div className="card" style={{ padding: 16, color: 'var(--err)' }}>{error}</div>}
-        <div className="card">
-          <div className="card-h"><div className="card-title">Shared Proposals</div></div>
-          <table className="tbl">
-            <thead><tr><th>Service</th><th>Value</th><th>Date</th><th>Status</th></tr></thead>
-            <tbody>
-              {proposals.map((proposal) => (
-                <tr key={proposal.id} onClick={() => navigate(`/portal/proposals/${proposal.id}`)}>
-                  <td><b>{proposal.service || '—'}</b></td>
-                  <td>{proposal.value || '—'}</td>
-                  <td>{proposal.date || '—'}</td>
-                  <td><Pill status={proposal.status} /></td>
-                </tr>
-              ))}
-              {!proposals.length && <tr><td colSpan="4" style={{ padding: 24, textAlign: 'center', color: 'var(--text-s)' }}>No proposals are available yet.</td></tr>}
-            </tbody>
-          </table>
+        <div className="page">
+          {error && <div className="form-error">{error}</div>}
+          <div className="panel tbl-wrap">
+            {proposals.length ? (
+              <table className="tbl">
+                <thead><tr><th>Proposal</th><th className="r">Investment</th><th className="hide-sm">Date</th><th>Status</th></tr></thead>
+                <tbody>
+                  {proposals.map((p) => (
+                    <tr key={p.id} onClick={() => navigate(`/portal/proposals/${p.id}`)}>
+                      <td style={{ fontWeight: 500 }}>{p.service || 'Proposal'}</td>
+                      <td className="r num">{p.value ? formatMoney(p.value) : '—'}</td>
+                      <td className="hide-sm muted">{formatDate(p.date || p.created_at)}</td>
+                      <td><Pill status={p.status || 'draft'} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <div className="empty" style={{ padding: 40 }}>{loaded ? 'No proposals shared yet.' : 'Loading…'}</div>}
+          </div>
         </div>
       </div>
-
-      <Modal
-        open={Boolean(selectedProposal)}
-        onClose={() => navigate('/portal/proposals')}
-        title={selectedProposal ? selectedProposal.service : 'Proposal'}
-        footer={<button className="btn bp" type="button" onClick={() => navigate('/portal/proposals')}>Close</button>}
-      >
-        {selectedProposal && (
-          <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{selectedProposal.value || '—'}</div><div className="stat-label">Quoted Value</div></div>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{selectedProposal.date || '—'}</div><div className="stat-label">Date</div></div>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{selectedProposal.status}</div><div className="stat-label">Status</div></div>
-            </div>
-            <div className="card" style={{ padding: 18 }}>
-              <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 8 }}>Overview</div>
-              <div style={{ color: 'var(--text-s)', fontSize: 13, marginBottom: 14 }}>{selectedProposal.overview || selectedProposal.intro || 'No summary has been added yet.'}</div>
-
-              <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 8 }}>Deliverables</div>
-              {toItems(selectedProposal.deliverables).map((item) => (
-                <div key={item} style={{ fontSize: 13, color: 'var(--text-s)', marginBottom: 6 }}>• {item}</div>
-              ))}
-              {!toItems(selectedProposal.deliverables).length && <div style={{ color: 'var(--text-s)', fontSize: 13, marginBottom: 14 }}>No deliverables listed.</div>}
-
-              <div style={{ fontWeight: 700, color: 'var(--navy)', margin: '14px 0 8px' }}>Timeline</div>
-              {toItems(selectedProposal.timeline).map((item) => (
-                <div key={item} style={{ fontSize: 13, color: 'var(--text-s)', marginBottom: 6 }}>• {item}</div>
-              ))}
-              {!toItems(selectedProposal.timeline).length && <div style={{ color: 'var(--text-s)', fontSize: 13 }}>No timeline has been attached yet.</div>}
-            </div>
-          </>
-        )}
-      </Modal>
     </>
   );
 }

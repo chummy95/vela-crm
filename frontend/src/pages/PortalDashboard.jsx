@@ -1,204 +1,138 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import Pill from '../components/Pill';
+import { Link } from 'react-router-dom';
+import Icon from '../components/Icon';
+import { JourneyRail } from '../components/ProjectJourney';
 import { useAuth } from '../hooks/useAuth';
 import { clientsAPI, contractsAPI, eventsAPI, invoicesAPI, messagesAPI, projectsAPI, proposalsAPI } from '../utils/api';
-import { STAGES } from '../utils/constants';
-
-function parseAmount(value) {
-  const numeric = Number(String(value || '').replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function formatMoney(value) {
-  return new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency: 'GBP',
-    maximumFractionDigits: 0,
-  }).format(value || 0);
-}
-
-function formatDate(value) {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
-
-function stageLabel(project) {
-  const service = String(project?.service || '').toLowerCase();
-  const labels = service.includes('pack') ? STAGES.packaging : service.includes('web') ? STAGES.web : STAGES.brand;
-  const index = Number(project?.stage || 0);
-  return labels[index] || `Stage ${index + 1}`;
-}
+import { daysFromToday, formatDate, formatMoney, greeting, isOverdue, relativeDay, stageLabel, stageLabels } from '../utils/format';
 
 export default function PortalDashboard() {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const [client, setClient] = useState(null);
-  const [projects, setProjects] = useState([]);
-  const [invoices, setInvoices] = useState([]);
-  const [proposals, setProposals] = useState([]);
-  const [contracts, setContracts] = useState([]);
-  const [events, setEvents] = useState([]);
-  const [messages, setMessages] = useState([]);
+  const [data, setData] = useState({ client: null, projects: [], invoices: [], proposals: [], contracts: [], events: [], messages: [] });
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     Promise.all([
-      clientsAPI.list(),
-      projectsAPI.list(),
-      invoicesAPI.list(),
-      proposalsAPI.list(),
-      contractsAPI.list(),
-      eventsAPI.list(),
-      messagesAPI.thread(user?.client_id),
+      clientsAPI.list(), projectsAPI.list(), invoicesAPI.list(), proposalsAPI.list(), contractsAPI.list(), eventsAPI.list(),
+      messagesAPI.thread(user?.client_id).catch(() => []),
     ])
-      .then(([clientRows, projectRows, invoiceRows, proposalRows, contractRows, eventRows, messageRows]) => {
-        setClient(clientRows[0] || null);
-        setProjects(projectRows);
-        setInvoices(invoiceRows);
-        setProposals(proposalRows);
-        setContracts(contractRows);
-        setEvents(eventRows);
-        setMessages(messageRows);
-        setError('');
+      .then(([clients, projects, invoices, proposals, contracts, events, messages]) => {
+        setData({ client: clients[0] || null, projects, invoices, proposals, contracts, events, messages });
       })
-      .catch((loadError) => setError(loadError.message));
+      .catch((err) => setError(err.message))
+      .finally(() => setLoaded(true));
   }, [user?.client_id]);
 
-  const openInvoices = useMemo(() => invoices.filter((invoice) => invoice.status !== 'paid'), [invoices]);
-  const activeProjects = useMemo(() => projects.filter((project) => project.status === 'active'), [projects]);
-  const signedContracts = useMemo(() => contracts.filter((contract) => contract.signed), [contracts]);
-  const totalOutstanding = useMemo(() => openInvoices.reduce((sum, invoice) => sum + parseAmount(invoice.amount), 0), [openInvoices]);
+  const { client, projects, invoices, proposals, contracts, events, messages } = data;
+  const firstName = String(user?.name || '').split(' ')[0];
+
+  const todo = useMemo(() => {
+    const items = [];
+    proposals.filter((p) => p.status === 'sent').forEach((p) => items.push({
+      key: `pp-${p.id}`, level: 'info', title: `Review the ${p.service || 'new'} proposal`, sub: `Sent ${relativeDay(p.date || p.created_at)}`, to: `/portal/proposals/${p.id}`,
+    }));
+    contracts.filter((c) => !c.signed).forEach((c) => items.push({
+      key: `ct-${c.id}`, level: 'warn', title: c.service ? `Your ${c.service} contract is waiting to be signed` : 'Your contract is waiting to be signed', sub: 'Read it through. The studio marks it signed once you’ve signed', to: `/portal/contracts/${c.id}`,
+    }));
+    invoices.filter((i) => i.status !== 'paid').forEach((i) => items.push({
+      key: `inv-${i.id}`, level: isOverdue(i) ? 'err' : 'warn',
+      title: `${formatMoney(i.amount)} ${isOverdue(i) ? 'is overdue' : 'to pay'}`,
+      sub: `${i.description || 'Invoice'}${i.due_date ? `, due ${relativeDay(i.due_date)}` : ''}`, to: `/portal/invoices/${i.id}`,
+    }));
+    return items;
+  }, [proposals, contracts, invoices]);
+
+  const upcoming = events.filter((e) => (daysFromToday(e.date) ?? -1) >= 0).sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)).slice(0, 3);
+  const lastMessage = messages[messages.length - 1];
 
   return (
-    <>
-      <div className="topbar">
-        <div className="tb-title">Client Portal</div>
-        <div className="tb-r">
-          <button className="btn bg bsm" onClick={() => navigate('/portal/projects')}>Projects</button>
-          <button className="btn bg bsm" onClick={() => navigate('/portal/invoices')}>Invoices</button>
-          <button className="btn bp bsm" onClick={() => navigate('/portal/messages')}>Messages</button>
-        </div>
-      </div>
-      <div className="content">
-        {error && <div className="card" style={{ padding: 16, color: 'var(--err)' }}>{error}</div>}
+    <div className="content">
+      <div className="page">
+        <header>
+          <div className="muted" style={{ fontSize: 13.5, marginBottom: 6 }}>{client?.name || user?.client_name || 'Your workspace'}</div>
+          <h1 className="h-display">{greeting()}{firstName ? `, ${firstName}` : ''}</h1>
+          <p className="lede" style={{ marginTop: 8 }}>Everything about your project with the studio, in one place.</p>
+        </header>
 
-        <div className="card" style={{ padding: 18 }}>
-          <div style={{ fontFamily: 'var(--font-heading)', fontSize: 24, fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>
-            {client?.name || user?.client_name || 'Your Workspace'}
-          </div>
-          <div style={{ color: 'var(--text-s)', fontSize: 13 }}>
-            Review active work, document progress, invoices, and studio updates in one place.
-          </div>
-        </div>
+        {error && <div className="form-error" style={{ marginTop: 20 }}>{error}</div>}
 
-        <div className="stat-grid">
-          <div className="stat-card" onClick={() => navigate('/portal/projects')}>
-            <div className="stat-val">{activeProjects.length}</div>
-            <div className="stat-label">Active Projects</div>
+        <section className="section" aria-labelledby="pp-h">
+          <div className="section-h">
+            <h2 id="pp-h" className="h-section">Where your project is</h2>
+            {projects.length > 1 && <Link className="link" to="/portal/projects">All projects</Link>}
           </div>
-          <div className="stat-card" onClick={() => navigate('/portal/invoices')}>
-            <div className="stat-val">{openInvoices.length}</div>
-            <div className="stat-label">Open Invoices</div>
-          </div>
-          <div className="stat-card" onClick={() => navigate('/portal/contracts')}>
-            <div className="stat-val">{signedContracts.length}</div>
-            <div className="stat-label">Signed Contracts</div>
-          </div>
-          <div className="stat-card" onClick={() => navigate('/portal/schedule')}>
-            <div className="stat-val">{events.length}</div>
-            <div className="stat-label">Upcoming Events</div>
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
-          <div className="card">
-            <div className="card-h">
-              <div className="card-title">Project Snapshot</div>
-              <button className="btn bg bsm" onClick={() => navigate('/portal/projects')}>View All</button>
-            </div>
-            <table className="tbl">
-              <thead><tr><th>Service</th><th>Current Output</th><th>Status</th></tr></thead>
-              <tbody>
-                {projects.slice(0, 4).map((project) => (
-                  <tr key={project.id} onClick={() => navigate(`/portal/projects/${project.id}`)}>
-                    <td><b>{project.service || '—'}</b></td>
-                    <td>{stageLabel(project)}</td>
-                    <td><Pill status={project.status} /></td>
-                  </tr>
-                ))}
-                {!projects.length && <tr><td colSpan="3" style={{ padding: 24, textAlign: 'center', color: 'var(--text-s)' }}>No projects have been shared yet.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="card" style={{ padding: 18 }}>
-            <div className="card-title" style={{ marginBottom: 10 }}>Billing Snapshot</div>
-            <div style={{ padding: 14, border: '1px solid var(--border)', borderRadius: 10, marginBottom: 10 }}>
-              <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>{formatMoney(totalOutstanding)}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-s)' }}>Total outstanding</div>
-            </div>
-            {openInvoices.slice(0, 3).map((invoice) => (
-              <div key={invoice.id} style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
-                  <b style={{ color: 'var(--navy)' }}>{invoice.amount || '—'}</b>
-                  <Pill status={invoice.status} />
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-s)' }}>Due {formatDate(invoice.due_date)} · {invoice.description || 'Studio invoice'}</div>
+          <div className="panel">
+            {projects.length ? (
+              <div className="journeys">
+                {projects.map((p) => {
+                  const total = stageLabels(p.service).length;
+                  const done = p.status === 'delivered' || p.status === 'completed';
+                  return (
+                    <Link key={p.id} className="journey tight" to={`/portal/projects/${p.id}`}>
+                      <span style={{ minWidth: 0 }}>
+                        <span className="journey-name" style={{ display: 'block' }}>{p.service}</span>
+                        <span className="journey-service">{done ? 'Delivered' : `Now in ${stageLabel(p)}`}</span>
+                      </span>
+                      <JourneyRail project={p} />
+                      <span className="journey-meta"><span className="journey-when">{done ? 'Complete' : `Stage ${Number(p.stage || 0) + 1} of ${total}`}</span></span>
+                    </Link>
+                  );
+                })}
               </div>
-            ))}
-            {!openInvoices.length && <div style={{ color: 'var(--text-s)', fontSize: 13 }}>No open invoices right now.</div>}
+            ) : <div className="empty">{loaded ? 'Your studio hasn’t shared a project here yet.' : 'Loading…'}</div>}
           </div>
-        </div>
+        </section>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, marginTop: 14 }}>
-          <div className="card">
-            <div className="card-h">
-              <div className="card-title">Documents</div>
-              <button className="btn bg bsm" onClick={() => navigate('/portal/proposals')}>Open</button>
-            </div>
-            <table className="tbl">
-              <thead><tr><th>Type</th><th>Service</th><th>Status</th></tr></thead>
-              <tbody>
-                {proposals.slice(0, 2).map((proposal) => (
-                  <tr key={proposal.id} onClick={() => navigate(`/portal/proposals/${proposal.id}`)}>
-                    <td><b>Proposal</b></td>
-                    <td>{proposal.service || '—'}</td>
-                    <td><Pill status={proposal.status} /></td>
-                  </tr>
+        <div className="split even section">
+          <section className="panel" aria-labelledby="todo-h">
+            <div className="card-h"><h2 id="todo-h" className="card-title">Waiting on you</h2></div>
+            {todo.length ? (
+              <ul className="rows">
+                {todo.map((item) => (
+                  <li key={item.key}>
+                    <Link className="row" to={item.to}>
+                      <span className={`signal ${item.level}`} />
+                      <span className="row-main">
+                        <span className="row-title" style={{ display: 'block' }}>{item.title}</span>
+                        <span className="row-sub" style={{ display: 'block' }}>{item.sub}</span>
+                      </span>
+                      <Icon name="forward" size={16} className="ico faint" />
+                    </Link>
+                  </li>
                 ))}
-                {contracts.slice(0, 2).map((contract) => (
-                  <tr key={contract.id} onClick={() => navigate(`/portal/contracts/${contract.id}`)}>
-                    <td><b>Contract</b></td>
-                    <td>{contract.service || '—'}</td>
-                    <td><Pill status={contract.signed ? 'signed' : 'pending'} label={contract.signed ? 'Signed' : 'Pending'} /></td>
-                  </tr>
-                ))}
-                {!proposals.length && !contracts.length && <tr><td colSpan="3" style={{ padding: 24, textAlign: 'center', color: 'var(--text-s)' }}>No documents have been shared yet.</td></tr>}
-              </tbody>
-            </table>
-          </div>
+              </ul>
+            ) : <div className="empty">{loaded ? 'Nothing needs you right now.' : 'Loading…'}</div>}
+          </section>
 
-          <div className="card">
-            <div className="card-h">
-              <div className="card-title">Latest Messages</div>
-              <button className="btn bg bsm" onClick={() => navigate('/portal/messages')}>Open Thread</button>
-            </div>
-            <div style={{ padding: 18 }}>
-              {messages.slice(-4).map((message) => (
-                <div key={message.id} style={{ marginBottom: 10, textAlign: message.outbound ? 'left' : 'right' }}>
-                  <div style={{ display: 'inline-block', padding: '10px 12px', borderRadius: 10, background: message.outbound ? 'var(--navy-pale)' : 'var(--navy)', color: message.outbound ? 'var(--text)' : '#fff', maxWidth: '85%' }}>
-                    <div style={{ fontSize: 13 }}>{message.text}</div>
-                    <div style={{ marginTop: 6, fontSize: 10.5, opacity: 0.8 }}>{formatDate(message.sent_at)}</div>
-                  </div>
+          <section className="panel" aria-label="Schedule and messages">
+            <div className="aside-block">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                <h2 className="card-title">Coming up</h2>
+                <Link to="/portal/schedule" style={{ fontSize: 13 }}>Full schedule</Link>
+              </div>
+              {upcoming.length ? upcoming.map((e) => (
+                <div key={e.id} style={{ padding: '7px 0' }}>
+                  <div className="row-title">{e.title || e.event_type}</div>
+                  <div className="row-sub">{formatDate(e.date, { weekday: 'long', day: 'numeric', month: 'long' })}{e.time ? ` at ${e.time}` : ''}</div>
                 </div>
-              ))}
-              {!messages.length && <div style={{ color: 'var(--text-s)', fontSize: 13 }}>No conversation history yet.</div>}
+              )) : <p className="muted" style={{ fontSize: 13 }}>Nothing booked yet.</p>}
             </div>
-          </div>
+            <div className="aside-block">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                <h2 className="card-title">Latest message</h2>
+                <Link to="/portal/messages" style={{ fontSize: 13 }}>Open messages</Link>
+              </div>
+              {lastMessage ? (
+                <>
+                  <div className="faint" style={{ fontSize: 12 }}>{lastMessage.outbound ? 'From the studio' : 'You'}, {relativeDay(lastMessage.sent_at)}</div>
+                  <p style={{ fontSize: 14, marginTop: 2 }}>{lastMessage.text}</p>
+                </>
+              ) : <p className="muted" style={{ fontSize: 13 }}>No messages yet. Say hello any time.</p>}
+            </div>
+          </section>
         </div>
       </div>
-    </>
+    </div>
   );
 }

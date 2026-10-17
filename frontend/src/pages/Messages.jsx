@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { clientsAPI, invoicesAPI, messagesAPI, projectsAPI } from '../utils/api';
-import Pill from '../components/Pill';
+import Icon from '../components/Icon';
+import ClientMark from '../components/ClientMark';
+import { relativeDay } from '../utils/format';
 
 function formatTime(value) {
   if (!value) return '';
@@ -127,123 +129,108 @@ export default function Messages() {
     }
   }
 
+  function onKeyDown(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      send(event);
+    }
+  }
+
   return (
     <>
       <div className="topbar">
-        <div className="tb-title">Messages</div>
-      </div>
-      <div className="content" style={{ display: 'grid', gridTemplateColumns: '320px minmax(0, 1fr)', gap: 14 }}>
-        <div className="card">
-          <div className="card-h">
-            <div className="card-title">Conversation List</div>
-            <div style={{ fontSize: 12, color: 'var(--text-s)' }}>{visibleThreads.length} clients</div>
+        <h1 className="tb-title">Messages</h1>
+        {selectedClient && (
+          <div className="tb-r">
+            <Link className="btn bg" to={`/clients/${selectedClient.id}`}><Icon name="users" />{selectedClient.name}’s profile</Link>
           </div>
-          <div style={{ padding: 10 }}>
-            {!visibleThreads.length && (
-              <div style={{ padding: 12, color: 'var(--text-s)', fontSize: 13 }}>
-                Add a client first to start a conversation history.
-              </div>
-            )}
-            {visibleThreads.map((thread) => (
-              <button
-                key={thread.client_id}
-                className="btn bg"
-                type="button"
-                style={{
-                  width: '100%',
-                  justifyContent: 'flex-start',
-                  textAlign: 'left',
-                  marginBottom: 8,
-                  borderColor: selectedClientId === thread.client_id ? 'var(--navy)' : 'var(--border)',
-                  padding: 12,
-                }}
-                onClick={() => setSelectedClientId(thread.client_id)}
-              >
-                <div style={{ width: '100%' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontWeight: 700, color: 'var(--navy)' }}>{thread.client_name || 'Unknown client'}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-s)' }}>{formatTime(thread.latest_at)}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-s)', marginBottom: 6 }}>
-                    {thread.latest_message || 'No messages yet. Send the first update.'}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <Pill status={thread.active_projects ? 'active' : 'completed'} label={`${thread.active_projects} active projects`} />
-                    <Pill status={thread.open_invoices ? 'unpaid' : 'paid'} label={`${thread.open_invoices} open invoices`} />
+        )}
+      </div>
+      <div className="content chat-content">
+        {error && <div className="form-error">{error}</div>}
+        <div className="chat">
+          <nav className="panel chat-list" aria-label="Conversations">
+            {!visibleThreads.length && <div className="empty">Add a client first, then you can message them here and in their portal.</div>}
+            <ul className="rows">
+              {visibleThreads.map((thread) => (
+                <li key={thread.client_id}>
+                  <button
+                    type="button"
+                    className="row"
+                    onClick={() => setSelectedClientId(thread.client_id)}
+                    aria-current={selectedClientId === thread.client_id}
+                    style={{ width: '100%', border: 'none', textAlign: 'left', background: selectedClientId === thread.client_id ? 'var(--info-bg)' : 'transparent', alignItems: 'center' }}
+                  >
+                    <ClientMark name={thread.client_name} color={thread.color} size={36} />
+                    <span className="row-main">
+                      <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <span className="row-title">{thread.client_name || 'Unknown client'}</span>
+                        <span className="faint" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{thread.latest_at ? relativeDay(thread.latest_at) : ''}</span>
+                      </span>
+                      <span className="row-sub" style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {thread.latest_message || 'No messages yet'}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
+          <section className="panel chat-thread" aria-label={selectedClient ? `Conversation with ${selectedClient.name}` : 'Conversation'}>
+            <header className="card-h">
+              {selectedClient ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                  <ClientMark name={selectedClient.name} color={selectedClient.color} size={34} />
+                  <div style={{ minWidth: 0 }}>
+                    <div className="card-title">{selectedClient.name}</div>
+                    <div className="muted" style={{ fontSize: 12.5 }}>
+                      {[selectedClient.contact, selectedClient.portal_user_id ? 'sees these messages in their portal' : 'no portal login yet'].filter(Boolean).join(', ')}
+                    </div>
                   </div>
                 </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 14, minWidth: 0 }}>
-          <div className="card" style={{ padding: 18 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--text-s)', textTransform: 'uppercase', marginBottom: 4 }}>Client</div>
-                <div style={{ fontWeight: 700, color: 'var(--navy)' }}>{selectedClient?.name || 'No client selected'}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--text-s)', textTransform: 'uppercase', marginBottom: 4 }}>Contact</div>
-                <div style={{ color: 'var(--text)' }}>{selectedClient?.contact || '—'}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--text-s)', textTransform: 'uppercase', marginBottom: 4 }}>Active Projects</div>
-                <div style={{ color: 'var(--text)' }}>{selectedProjects.filter((project) => project.status === 'active').length}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--text-s)', textTransform: 'uppercase', marginBottom: 4 }}>Open Invoices</div>
-                <div style={{ color: 'var(--text)' }}>{selectedInvoices.filter((invoice) => invoice.status !== 'paid').length}</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <div className="card-h">
-              <div className="card-title">Conversation Output</div>
-              {selectedClient && <div style={{ fontSize: 12, color: 'var(--text-s)' }}>{selectedClient.email || 'No email on file'}</div>}
-            </div>
-            <div style={{ padding: 18, flex: 1, overflowY: 'auto' }}>
-              {error && <div style={{ marginBottom: 12, color: 'var(--err)' }}>{error}</div>}
-              {!selectedClient && <div style={{ color: 'var(--text-s)' }}>Choose a client to see or send messages.</div>}
-              {selectedClient && loadingMessages && <div style={{ color: 'var(--text-s)' }}>Loading messages…</div>}
-              {selectedClient && !loadingMessages && !messages.length && (
-                <div style={{ color: 'var(--text-s)' }}>
-                  No messages yet for this client. Send a first project update, invoice reminder, or onboarding note below.
+              ) : <div className="card-title">Messages</div>}
+              {selectedClient && (
+                <div className="muted hide-sm" style={{ fontSize: 12.5, textAlign: 'right' }}>
+                  {(() => {
+                    const a = selectedProjects.filter((p) => p.status === 'active').length;
+                    const u = selectedInvoices.filter((i) => i.status !== 'paid').length;
+                    return `${a} active ${a === 1 ? 'project' : 'projects'}, ${u} unpaid ${u === 1 ? 'invoice' : 'invoices'}`;
+                  })()}
                 </div>
               )}
+            </header>
+            <div className="chat-scroll">
+              {!selectedClient && <div className="empty">Choose a client to see your conversation.</div>}
+              {selectedClient && loadingMessages && <div className="empty">Loading messages…</div>}
+              {selectedClient && !loadingMessages && !messages.length && (
+                <div className="empty">No messages with {selectedClient.name} yet. Send a project update or a quick hello below.</div>
+              )}
               {messages.map((message) => (
-                <div key={message.id} style={{ marginBottom: 12, textAlign: message.outbound ? 'right' : 'left' }}>
-                  <div
-                    style={{
-                      display: 'inline-block',
-                      background: message.outbound ? 'var(--navy)' : 'var(--navy-pale)',
-                      color: message.outbound ? '#fff' : 'var(--text)',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      maxWidth: '75%',
-                    }}
-                  >
-                    <div style={{ fontSize: 13, lineHeight: 1.5 }}>{message.text}</div>
-                    <div style={{ marginTop: 6, fontSize: 10.5, opacity: 0.8 }}>{formatTime(message.sent_at)}</div>
+                <div key={message.id} className={`bubble-row${message.outbound ? ' out' : ''}`}>
+                  <div className="bubble">
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{message.text}</div>
+                    <div className="bubble-time">{message.outbound ? 'You' : (selectedClient?.contact || selectedClient?.name)}, {formatTime(message.sent_at)}</div>
                   </div>
                 </div>
               ))}
             </div>
-            <form onSubmit={send} style={{ padding: 18, borderTop: '1px solid var(--border)', display: 'flex', gap: 10 }}>
-              <input
+            <form onSubmit={send} className="chat-compose">
+              <label className="sr-only" htmlFor="chat-draft">Message</label>
+              <textarea
+                id="chat-draft"
                 className="fi"
+                rows={2}
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder={selectedClient ? `Write an update for ${selectedClient.name}…` : 'Select a client first'}
+                onKeyDown={onKeyDown}
+                placeholder={selectedClient ? `Message ${selectedClient.contact || selectedClient.name}` : 'Choose a client first'}
                 disabled={!selectedClient || sending}
+                style={{ minHeight: 44, resize: 'none' }}
               />
-              <button className="btn bp" type="submit" disabled={!selectedClient || sending || !draft.trim()}>
-                {sending ? 'Sending…' : 'Send'}
-              </button>
+              <button className="btn bp" type="submit" disabled={!selectedClient || sending || !draft.trim()}>{sending ? 'Sending…' : 'Send'}</button>
             </form>
-          </div>
+          </section>
         </div>
       </div>
     </>

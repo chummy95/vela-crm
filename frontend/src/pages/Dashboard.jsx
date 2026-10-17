@@ -95,8 +95,8 @@ export default function Dashboard() {
       return diff !== null && diff >= -7;
     }).forEach((s) => items.push({
       key: `sub-${s.id}`, level: 'info', rank: 4,
-      title: `New enquiry from ${pick(s.data, /full name|^name/i) || 'someone new'}`,
-      sub: [pick(s.data, /brand|business/i), pick(s.data, /service/i)].filter(Boolean).join(', ') || `Received ${relativeDay(s.submitted_at)}`,
+      title: `New enquiry from ${pick(s.data, /full[\s_]?name|^name$/i) || 'someone new'}`,
+      sub: [pick(s.data, /brand|business|company/i), pick(s.data, /service/i)].filter(Boolean).join(', ') || `Received ${relativeDay(s.submitted_at)}`,
       to: '/forms',
     }));
     return items.sort((a, b) => a.rank - b.rank);
@@ -288,8 +288,8 @@ export default function Dashboard() {
                 <tbody>
                   {recentEnquiries.map((s) => (
                     <tr key={s.id} onClick={() => navigate('/forms')}>
-                      <td style={{ fontWeight: 500 }}>{pick(s.data, /full name|^name/i) || '—'}</td>
-                      <td>{pick(s.data, /brand|business/i) || '—'}</td>
+                      <td style={{ fontWeight: 500 }}>{pick(s.data, /full[\s_]?name|^name$/i) || '—'}</td>
+                      <td>{pick(s.data, /brand|business|company/i) || '—'}</td>
                       <td className="hide-sm">{pick(s.data, /service/i) || '—'}</td>
                       <td className="hide-sm">{pick(s.data, /budget/i) || '—'}</td>
                       <td className="r muted">{relativeDay(s.submitted_at)}</td>
