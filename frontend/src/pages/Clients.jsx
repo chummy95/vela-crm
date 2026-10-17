@@ -1,299 +1,176 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Modal from '../components/Modal';
-import { clientsAPI, contractsAPI, invoicesAPI, projectsAPI, proposalsAPI } from '../utils/api';
-
-const INDUSTRIES = ['Beauty & Wellness', 'Fashion & Lifestyle', 'Hospitality', 'Interiors', 'Other'];
-
-function blankClient() {
-  return { name: '', contact: '', email: '', location: '', industry: 'Beauty & Wellness', color: '#1B2B4B' };
-}
-
-function blankPortal(client) {
-  return {
-    name: client?.portal_name || client?.contact || client?.name || '',
-    email: client?.portal_email || client?.email || '',
-    password: '',
-  };
-}
+import ClientMark from '../components/ClientMark';
+import ClientForm, { blankClient } from '../components/ClientForm';
+import Icon from '../components/Icon';
+import { useAuth } from '../hooks/useAuth';
+import { clientsAPI, invoicesAPI, projectsAPI } from '../utils/api';
+import { formatMoney, isOverdue, parseAmount } from '../utils/format';
 
 export default function Clients() {
+  const { user } = useAuth();
+  const currency = user?.currency || 'GBP';
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
   const [invoices, setInvoices] = useState([]);
-  const [proposals, setProposals] = useState([]);
-  const [contracts, setContracts] = useState([]);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [selectedClientId, setSelectedClientId] = useState('');
-  const [createForm, setCreateForm] = useState(blankClient());
-  const [detailForm, setDetailForm] = useState(blankClient());
+  const [loaded, setLoaded] = useState(false);
+  const [query, setQuery] = useState('');
   const [pageError, setPageError] = useState('');
+  const [createOpen, setCreateOpen] = useState(searchParams.get('new') === '1');
+  const [createForm, setCreateForm] = useState(blankClient());
   const [createError, setCreateError] = useState('');
-  const [detailError, setDetailError] = useState('');
-  const [portalError, setPortalError] = useState('');
-  const [savingCreate, setSavingCreate] = useState(false);
-  const [savingDetail, setSavingDetail] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [provisioningPortal, setProvisioningPortal] = useState(false);
-  const [copiedPortal, setCopiedPortal] = useState(false);
-  const [portalForm, setPortalForm] = useState(blankPortal());
-
-  async function load() {
-    const [clientRows, projectRows, invoiceRows, proposalRows, contractRows] = await Promise.all([
-      clientsAPI.list(),
-      projectsAPI.list(),
-      invoicesAPI.list(),
-      proposalsAPI.list(),
-      contractsAPI.list(),
-    ]);
-    setClients(clientRows);
-    setProjects(projectRows);
-    setInvoices(invoiceRows);
-    setProposals(proposalRows);
-    setContracts(contractRows);
-  }
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    load().catch((err) => setPageError(err.message));
+    Promise.all([clientsAPI.list(), projectsAPI.list(), invoicesAPI.list()])
+      .then(([clientRows, projectRows, invoiceRows]) => {
+        setClients(clientRows);
+        setProjects(projectRows);
+        setInvoices(invoiceRows);
+      })
+      .catch((err) => setPageError(err.message))
+      .finally(() => setLoaded(true));
   }, []);
 
-  const selectedClient = useMemo(
-    () => clients.find((client) => client.id === selectedClientId) || null,
-    [clients, selectedClientId]
-  );
+  function openCreate() {
+    setCreateError('');
+    setCreateForm(blankClient());
+    setCreateOpen(true);
+  }
 
-  useEffect(() => {
-    if (!selectedClient) return;
-    setDetailForm({
-      name: selectedClient.name || '',
-      contact: selectedClient.contact || '',
-      email: selectedClient.email || '',
-      location: selectedClient.location || '',
-      industry: selectedClient.industry || 'Other',
-      color: selectedClient.color || '#1B2B4B',
-    });
-    setPortalForm(blankPortal(selectedClient));
-    setDetailError('');
-    setPortalError('');
-    setCopiedPortal(false);
-  }, [selectedClient]);
-
-  const selectedSummary = useMemo(() => {
-    if (!selectedClient) return null;
-    return {
-      projects: projects.filter((project) => project.client_id === selectedClient.id).length,
-      invoices: invoices.filter((invoice) => invoice.client_id === selectedClient.id).length,
-      proposals: proposals.filter((proposal) => proposal.client_id === selectedClient.id).length,
-      contracts: contracts.filter((contract) => contract.client_id === selectedClient.id).length,
-    };
-  }, [contracts, invoices, projects, proposals, selectedClient]);
+  function closeCreate() {
+    setCreateOpen(false);
+    if (searchParams.get('new')) setSearchParams({}, { replace: true });
+  }
 
   async function handleCreate(event) {
     event.preventDefault();
-    setSavingCreate(true);
+    setSaving(true);
     setCreateError('');
     try {
       const created = await clientsAPI.create(createForm);
-      setClients((prev) => [created, ...prev]);
-      setCreateForm(blankClient());
-      setCreateOpen(false);
-      setSelectedClientId(created.id);
+      navigate(`/clients/${created.id}`);
     } catch (err) {
       setCreateError(err.message);
     } finally {
-      setSavingCreate(false);
+      setSaving(false);
     }
   }
 
-  async function handleUpdate(event) {
-    event.preventDefault();
-    if (!selectedClient) return;
-    setSavingDetail(true);
-    setDetailError('');
-    try {
-      const updated = await clientsAPI.update(selectedClient.id, detailForm);
-      setClients((prev) => prev.map((client) => (client.id === updated.id ? updated : client)));
-    } catch (err) {
-      setDetailError(err.message);
-    } finally {
-      setSavingDetail(false);
-    }
-  }
-
-  async function handleDelete() {
-    if (!selectedClient) return;
-    setDeleting(true);
-    setDetailError('');
-    try {
-      await clientsAPI.remove(selectedClient.id);
-      setClients((prev) => prev.filter((client) => client.id !== selectedClient.id));
-      setSelectedClientId('');
-    } catch (err) {
-      setDetailError(err.message);
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  async function handleCreatePortal(event) {
-    event.preventDefault();
-    if (!selectedClient) return;
-    setProvisioningPortal(true);
-    setPortalError('');
-    try {
-      const updated = await clientsAPI.createPortalAccess(selectedClient.id, portalForm);
-      setClients((prev) => prev.map((client) => (client.id === updated.id ? updated : client)));
-      setPortalForm((current) => ({ ...current, password: '' }));
-    } catch (err) {
-      setPortalError(err.message);
-    } finally {
-      setProvisioningPortal(false);
-    }
-  }
-
-  async function copyPortalLink() {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/portal/login`);
-      setCopiedPortal(true);
-      setTimeout(() => setCopiedPortal(false), 1500);
-    } catch (err) {
-      setPortalError(err.message);
-    }
-  }
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return clients
+      .filter((c) => !q || [c.name, c.contact, c.email, c.location, c.industry].some((v) => String(v || '').toLowerCase().includes(q)))
+      .map((c) => {
+        const mine = invoices.filter((i) => i.client_id === c.id && i.status !== 'paid');
+        return {
+          ...c,
+          active: projects.filter((p) => p.client_id === c.id && p.status === 'active').length,
+          outstanding: mine.reduce((s, i) => s + parseAmount(i.amount), 0),
+          overdue: mine.some(isOverdue),
+        };
+      })
+      .sort((a, b) => (b.active - a.active) || String(a.name).localeCompare(String(b.name)));
+  }, [clients, projects, invoices, query]);
 
   return (
     <>
       <div className="topbar">
-        <div className="tb-title">Clients</div>
-        <div className="tb-r"><button className="btn bp bsm" onClick={() => { setCreateError(''); setCreateForm(blankClient()); setCreateOpen(true); }}>+ Add Client</button></div>
+        <h1 className="tb-title">Clients</h1>
+        <div className="tb-r">
+          {clients.length > 0 && (
+            <div className="search">
+              <Icon name="search" />
+              <input className="fi" type="search" placeholder="Search clients" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search clients" />
+            </div>
+          )}
+          <button className="btn bp" type="button" onClick={openCreate}><Icon name="plus" />Add client</button>
+        </div>
       </div>
       <div className="content">
-        {pageError && <div className="card" style={{ padding: 16, color: 'var(--err)' }}>{pageError}</div>}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
-          {clients.map((client) => (
-            <button
-              key={client.id}
-              className="card"
-              type="button"
-              style={{ cursor: 'pointer', textAlign: 'left', borderColor: selectedClientId === client.id ? 'var(--navy)' : 'var(--border)' }}
-              onClick={() => setSelectedClientId(client.id)}
-            >
-              <div style={{ height: 72, background: client.color || 'var(--navy)', padding: '16px 18px' }}>
-                <div style={{ fontFamily: 'var(--font-heading)', fontSize: 17, fontWeight: 700, color: '#fff' }}>{client.name}</div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,.6)', marginTop: 2 }}>{client.industry} · {client.location || 'No location yet'}</div>
+        <div className="page">
+          {pageError && <div className="form-error">{pageError}</div>}
+          <div className="panel tbl-wrap">
+            {rows.length > 0 ? (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Client</th>
+                    <th className="hide-sm">Main contact</th>
+                    <th className="hide-sm">Location</th>
+                    <th className="r">Active projects</th>
+                    <th className="r">Unpaid</th>
+                    <th className="hide-sm">Portal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((c) => (
+                    <tr key={c.id} onClick={() => navigate(`/clients/${c.id}`)}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <ClientMark name={c.name} color={c.color} size={36} />
+                          <div style={{ minWidth: 0 }}>
+                            <a
+                              href={`/clients/${c.id}`}
+                              onClick={(e) => { e.preventDefault(); navigate(`/clients/${c.id}`); }}
+                              className="serif"
+                              style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}
+                            >
+                              {c.name}
+                            </a>
+                            <div className="muted" style={{ fontSize: 12.5 }}>{c.industry || 'No industry set'}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="hide-sm">
+                        <div>{c.contact || <span className="faint">Not added</span>}</div>
+                        {c.email && <div className="muted" style={{ fontSize: 12.5 }}>{c.email}</div>}
+                      </td>
+                      <td className="hide-sm">{c.location || <span className="faint">—</span>}</td>
+                      <td className="r num">{c.active || <span className="faint">0</span>}</td>
+                      <td className="r num">
+                        {c.outstanding
+                          ? <span style={{ color: c.overdue ? 'var(--err)' : 'var(--ink)' }}>{formatMoney(c.outstanding, currency)}</span>
+                          : <span className="faint">—</span>}
+                      </td>
+                      <td className="hide-sm">
+                        {c.portal_user_id ? <span className="pill" style={{ background: 'var(--ok-bg)', color: 'var(--ok)' }}>Has access</span> : <span className="faint">Not invited</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="empty" style={{ padding: 40 }}>
+                {!loaded && 'Loading…'}
+                {loaded && clients.length === 0 && (
+                  <>
+                    <b>Your client list is empty.</b> Add your first client to start projects, send proposals and give them a portal login.
+                    <div style={{ marginTop: 14 }}><button className="btn bp" type="button" onClick={openCreate}><Icon name="plus" />Add client</button></div>
+                  </>
+                )}
+                {loaded && clients.length > 0 && <>No clients match “{query}”.</>}
               </div>
-              <div style={{ padding: '14px 18px' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy)' }}>{client.contact || 'No contact added'}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--text-s)', marginTop: 2 }}>{client.email || 'No email added'}</div>
-              </div>
-            </button>
-          ))}
-          {clients.length === 0 && <div style={{ gridColumn: '1/-1', textAlign: 'center', color: 'var(--text-s)', padding: 40 }}>No clients yet.</div>}
+            )}
+          </div>
         </div>
       </div>
 
       <Modal
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Add Client"
+        onClose={closeCreate}
+        title="Add client"
         footer={
           <>
-            <button className="btn bg" type="button" onClick={() => setCreateOpen(false)}>Cancel</button>
-            <button className="btn bp" type="submit" form="client-create-form" disabled={savingCreate}>
-              {savingCreate ? 'Saving…' : 'Add Client'}
-            </button>
+            <button className="btn bg" type="button" onClick={closeCreate}>Cancel</button>
+            <button className="btn bp" type="submit" form="client-create" disabled={saving}>{saving ? 'Adding…' : 'Add client'}</button>
           </>
         }
       >
-        <form id="client-create-form" onSubmit={handleCreate}>
-          {createError && <div style={{ marginBottom: 12, color: 'var(--err)' }}>{createError}</div>}
-          <div className="fc"><div className="fc-label">Brand Name</div><input className="fi" value={createForm.name} onChange={(event) => setCreateForm({ ...createForm, name: event.target.value })} required /></div>
-          <div className="fi-row">
-            <div className="fc"><div className="fc-label">Contact Name</div><input className="fi" value={createForm.contact} onChange={(event) => setCreateForm({ ...createForm, contact: event.target.value })} /></div>
-            <div className="fc"><div className="fc-label">Email</div><input className="fi" type="email" value={createForm.email} onChange={(event) => setCreateForm({ ...createForm, email: event.target.value })} /></div>
-          </div>
-          <div className="fi-row">
-            <div className="fc"><div className="fc-label">Location</div><input className="fi" value={createForm.location} onChange={(event) => setCreateForm({ ...createForm, location: event.target.value })} /></div>
-            <div className="fc"><div className="fc-label">Industry</div>
-              <select className="fi fsel" value={createForm.industry} onChange={(event) => setCreateForm({ ...createForm, industry: event.target.value })}>
-                {INDUSTRIES.map((industry) => <option key={industry}>{industry}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="fc"><div className="fc-label">Brand Colour</div><input type="color" value={createForm.color} onChange={(event) => setCreateForm({ ...createForm, color: event.target.value })} style={{ width: 40, height: 32, borderRadius: 6, border: '1.5px solid var(--border)', cursor: 'pointer' }} /></div>
-        </form>
-      </Modal>
-
-      <Modal
-        open={Boolean(selectedClient)}
-        onClose={() => setSelectedClientId('')}
-        title={selectedClient ? selectedClient.name : 'Client'}
-        footer={
-          <>
-            <button className="btn bg" type="button" onClick={() => setSelectedClientId('')}>Close</button>
-            <button className="btn bg" type="button" onClick={handleDelete} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete'}</button>
-            <button className="btn bp" type="submit" form="client-detail-form" disabled={savingDetail}>{savingDetail ? 'Saving…' : 'Save Changes'}</button>
-          </>
-        }
-      >
-        {selectedClient && (
-          <>
-            {detailError && <div style={{ marginBottom: 12, color: 'var(--err)' }}>{detailError}</div>}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{selectedSummary?.projects || 0}</div><div className="stat-label">Projects</div></div>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{selectedSummary?.invoices || 0}</div><div className="stat-label">Invoices</div></div>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{selectedSummary?.proposals || 0}</div><div className="stat-label">Proposals</div></div>
-              <div className="stat-card"><div className="stat-val" style={{ fontSize: 20 }}>{selectedSummary?.contracts || 0}</div><div className="stat-label">Contracts</div></div>
-            </div>
-            <form id="client-detail-form" onSubmit={handleUpdate}>
-              <div className="fc"><div className="fc-label">Brand Name</div><input className="fi" value={detailForm.name} onChange={(event) => setDetailForm({ ...detailForm, name: event.target.value })} required /></div>
-              <div className="fi-row">
-                <div className="fc"><div className="fc-label">Contact Name</div><input className="fi" value={detailForm.contact} onChange={(event) => setDetailForm({ ...detailForm, contact: event.target.value })} /></div>
-                <div className="fc"><div className="fc-label">Email</div><input className="fi" type="email" value={detailForm.email} onChange={(event) => setDetailForm({ ...detailForm, email: event.target.value })} /></div>
-              </div>
-              <div className="fi-row">
-                <div className="fc"><div className="fc-label">Location</div><input className="fi" value={detailForm.location} onChange={(event) => setDetailForm({ ...detailForm, location: event.target.value })} /></div>
-                <div className="fc"><div className="fc-label">Industry</div>
-                  <select className="fi fsel" value={detailForm.industry} onChange={(event) => setDetailForm({ ...detailForm, industry: event.target.value })}>
-                    {INDUSTRIES.map((industry) => <option key={industry}>{industry}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="fc"><div className="fc-label">Brand Colour</div><input type="color" value={detailForm.color} onChange={(event) => setDetailForm({ ...detailForm, color: event.target.value })} style={{ width: 40, height: 32, borderRadius: 6, border: '1.5px solid var(--border)', cursor: 'pointer' }} /></div>
-            </form>
-
-            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-              <div className="card-title" style={{ marginBottom: 10 }}>Client Portal</div>
-              {portalError && <div style={{ marginBottom: 12, color: 'var(--err)' }}>{portalError}</div>}
-              {selectedClient.portal_user_id ? (
-                <>
-                  <div style={{ padding: 12, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--card)', marginBottom: 12 }}>
-                    <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>Portal access is active</div>
-                    <div style={{ fontSize: 13, color: 'var(--text-s)' }}>
-                      {selectedClient.portal_name || selectedClient.contact || selectedClient.name} can sign in with {selectedClient.portal_email || selectedClient.email || 'their portal email'}.
-                    </div>
-                  </div>
-                  <div className="fi-row">
-                    <div className="fc"><div className="fc-label">Portal Login URL</div><input className="fi" readOnly value={`${window.location.origin}/portal/login`} /></div>
-                    <div className="fc"><div className="fc-label">Portal Email</div><input className="fi" readOnly value={selectedClient.portal_email || selectedClient.email || ''} /></div>
-                  </div>
-                  <button className="btn bg" type="button" onClick={copyPortalLink}>{copiedPortal ? 'Copied' : 'Copy Portal Link'}</button>
-                </>
-              ) : (
-                <form onSubmit={handleCreatePortal}>
-                  <div style={{ fontSize: 13, color: 'var(--text-s)', marginBottom: 12 }}>
-                    Create a separate email/password account so this client can sign in to the customer portal.
-                  </div>
-                  <div className="fi-row">
-                    <div className="fc"><div className="fc-label">Portal Name</div><input className="fi" value={portalForm.name} onChange={(event) => setPortalForm({ ...portalForm, name: event.target.value })} required /></div>
-                    <div className="fc"><div className="fc-label">Portal Email</div><input className="fi" type="email" value={portalForm.email} onChange={(event) => setPortalForm({ ...portalForm, email: event.target.value })} required /></div>
-                  </div>
-                  <div className="fc"><div className="fc-label">Temporary Password</div><input className="fi" type="password" value={portalForm.password} onChange={(event) => setPortalForm({ ...portalForm, password: event.target.value })} required /></div>
-                  <button className="btn bp" type="submit" disabled={provisioningPortal}>{provisioningPortal ? 'Creating access…' : 'Create Portal Access'}</button>
-                </form>
-              )}
-            </div>
-          </>
-        )}
+        <ClientForm id="client-create" value={createForm} onChange={setCreateForm} onSubmit={handleCreate} error={createError} />
       </Modal>
     </>
   );

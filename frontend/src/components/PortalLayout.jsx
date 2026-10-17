@@ -1,16 +1,16 @@
 import React from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import BrandLogo from './BrandLogo';
+import { useNavigate } from 'react-router-dom';
+import Shell from './Shell';
 import { useAuth } from '../hooks/useAuth';
 
 const NAV = [
-  { to: '/portal', label: 'Overview', icon: '🏠', section: 'Portal' },
-  { to: '/portal/projects', label: 'Projects', icon: '📁', section: 'Workspace' },
-  { to: '/portal/invoices', label: 'Invoices', icon: '💳' },
-  { to: '/portal/proposals', label: 'Proposals', icon: '📋' },
-  { to: '/portal/contracts', label: 'Contracts', icon: '✍️' },
-  { to: '/portal/schedule', label: 'Schedule', icon: '📅', section: 'Updates' },
-  { to: '/portal/messages', label: 'Messages', icon: '💬' },
+  { to: '/portal',           label: 'Overview',  icon: 'home' },
+  { to: '/portal/projects',  label: 'Projects',  icon: 'folder',   section: 'Your work' },
+  { to: '/portal/messages',  label: 'Messages',  icon: 'message' },
+  { to: '/portal/schedule',  label: 'Schedule',  icon: 'calendar' },
+  { to: '/portal/proposals', label: 'Proposals', icon: 'proposal', section: 'Paperwork' },
+  { to: '/portal/contracts', label: 'Contracts', icon: 'contract' },
+  { to: '/portal/invoices',  label: 'Invoices',  icon: 'receipt' },
 ];
 
 export default function PortalLayout() {
@@ -23,33 +23,14 @@ export default function PortalLayout() {
   }
 
   return (
-    <div className="app">
-      <aside className="sidebar" style={{ background: 'linear-gradient(180deg, var(--navy), #314976)' }}>
-        <div className="sb-logo" onClick={() => navigate('/portal')}>
-          <BrandLogo variant="whiteTagline" width={148} alt="Vela client portal" className="brand-logo" />
-        </div>
-        <nav className="sb-nav">
-          {NAV.map((item) => (
-            <React.Fragment key={item.to}>
-              {item.section && <div className="sb-sec">{item.section}</div>}
-              <NavLink to={item.to} end={item.to === '/portal'} className={({ isActive }) => `ni${isActive ? ' active' : ''}`}>
-                <span className="ico">{item.icon}</span>
-                {item.label}
-              </NavLink>
-            </React.Fragment>
-          ))}
-        </nav>
-        <div className="sb-user">
-          <div className="ua">{(user?.client_name || user?.name || 'C')[0]}</div>
-          <div>
-            <div className="un">{user?.client_name || user?.name || 'Client'}</div>
-            <div className="up" onClick={handleLogout} style={{ cursor: 'pointer' }}>Sign Out</div>
-          </div>
-        </div>
-      </aside>
-      <main className="main">
-        <Outlet />
-      </main>
-    </div>
+    <Shell
+      nav={NAV}
+      home="/portal"
+      logoVariant="whiteTagline"
+      logoWidth={132}
+      userName={user?.name || 'Client'}
+      userSub={user?.client_name}
+      onSignOut={handleLogout}
+    />
   );
 }
