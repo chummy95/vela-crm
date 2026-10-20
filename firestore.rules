@@ -69,6 +69,16 @@ service cloud.firestore {
         && request.resource.data.outbound == false;
     }
 
+    // A client may fill in their own questionnaire until it is submitted,
+    // touching only their answers and its progress fields.
+    function clientCanAnswer() {
+      return clientCanReadRecord()
+        && resource.data.status != 'submitted'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answers', 'status', 'updated_at', 'submitted_at'])
+        && request.resource.data.status in ['in_progress', 'submitted']
+        && request.resource.data.answers is map;
+    }
+
     function publicFormTargetExists() {
       return request.resource.data.user_id is string
         && request.resource.data.user_id.size() > 0
@@ -84,43 +94,64 @@ service cloud.firestore {
     match /clients/{docId} {
       allow create: if studioOwnsIncomingRecord();
       allow get, list: if studioOwnsExistingRecord() || clientCanReadOwnClient(docId);
-      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow update: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow delete: if studioOwnsExistingRecord();
     }
 
     match /projects/{docId} {
       allow create: if studioOwnsIncomingRecord();
       allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
-      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow update: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow delete: if studioOwnsExistingRecord();
     }
 
     match /invoices/{docId} {
       allow create: if studioOwnsIncomingRecord();
       allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
-      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow update: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow delete: if studioOwnsExistingRecord();
     }
 
     match /proposals/{docId} {
       allow create: if studioOwnsIncomingRecord();
       allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
-      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow update: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow delete: if studioOwnsExistingRecord();
     }
 
     match /contracts/{docId} {
       allow create: if studioOwnsIncomingRecord();
       allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
-      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow update: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow delete: if studioOwnsExistingRecord();
     }
 
     match /events/{docId} {
       allow create: if studioOwnsIncomingRecord();
       allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
-      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow update: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow delete: if studioOwnsExistingRecord();
     }
 
     match /messages/{docId} {
       allow create: if studioOwnsIncomingRecord() || clientCanCreateMessage();
       allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
-      allow update, delete: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow update: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow delete: if studioOwnsExistingRecord();
+    }
+
+    match /questionnaires/{docId} {
+      allow create: if studioOwnsIncomingRecord();
+      allow get, list: if studioOwnsExistingRecord();
+      allow update: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow delete: if studioOwnsExistingRecord();
+    }
+
+    match /questionnaire_responses/{docId} {
+      allow create: if studioOwnsIncomingRecord();
+      allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
+      allow update: if (studioOwnsExistingRecord() && studioKeepsOwnership()) || clientCanAnswer();
+      allow delete: if studioOwnsExistingRecord();
     }
 
     match /form_configs/{userId} {

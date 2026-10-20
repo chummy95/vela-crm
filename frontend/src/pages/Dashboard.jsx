@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useQuestionnaireAlerts } from '../hooks/useQuestionnaireAlerts';
 import { contractsAPI, formsAPI, invoicesAPI, projectsAPI, proposalsAPI, eventsAPI } from '../utils/api';
 import { JourneyRail } from '../components/ProjectJourney';
 import ClientMark from '../components/ClientMark';
@@ -33,6 +34,7 @@ export default function Dashboard() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const { unseen } = useQuestionnaireAlerts();
 
   useEffect(() => {
     Promise.all([projectsAPI.list(), invoicesAPI.list(), proposalsAPI.list(), contractsAPI.list(), eventsAPI.list(), formsAPI.submissions()])
@@ -61,6 +63,12 @@ export default function Dashboard() {
 
   const attention = useMemo(() => {
     const items = [];
+    unseen.forEach((r) => items.push({
+      key: `qr-${r.id}`, level: 'ok', rank: -1,
+      title: `${r.contact_name || r.client_name} filled in their questionnaire`,
+      sub: `${r.title} for ${r.client_name}, submitted ${relativeDay(r.submitted_at)}`,
+      to: `/questionnaires/responses/${r.id}`,
+    }));
     invoices.filter(isOverdue).forEach((inv) => items.push({
       key: `inv-${inv.id}`, level: 'err', rank: 0,
       title: `${inv.client_name || 'A client'} owes ${formatMoney(inv.amount, currency)}`,
@@ -100,7 +108,7 @@ export default function Dashboard() {
       to: '/forms',
     }));
     return items.sort((a, b) => a.rank - b.rank);
-  }, [invoices, contracts, proposals, submissions, currency]);
+  }, [invoices, contracts, proposals, submissions, currency, unseen]);
 
   const week = useMemo(() => {
     const upcoming = events

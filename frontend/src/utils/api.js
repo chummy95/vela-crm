@@ -11,6 +11,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   query,
   setDoc,
   updateDoc,
@@ -239,11 +240,18 @@ async function listAccessibleDocs(collectionName) {
   }
 
   const targetClientId = text(session.profile.client_id);
-  if (!targetClientId) {
+  const studioOwnerId = text(session.profile.studio_owner_id);
+  if (!targetClientId || !studioOwnerId) {
     return [];
   }
 
-  const snapshot = await getDocs(query(collection(db, collectionName), where('client_id', '==', targetClientId)));
+  // Both filters are needed: the security rules only let a client list records
+  // that belong to their own client file *and* their studio.
+  const snapshot = await getDocs(query(
+    collection(db, collectionName),
+    where('client_id', '==', targetClientId),
+    where('user_id', '==', studioOwnerId),
+  ));
   return snapshot.docs
     .map((item) => ({ id: item.id, ...item.data() }))
     .filter((item) => matchesClientRecord(session.profile, item));
@@ -1085,5 +1093,200 @@ export const messagesAPI = {
 
     const reference = await addDoc(collection(db, 'messages'), payload);
     return { id: reference.id, ...payload };
+  },
+};
+
+function sanitizeQuestions(questions) {
+  const allowed = ['section', 'text', 'textarea', 'choice', 'checkboxes'];
+  return (Array.isArray(questions) ? questions : [])
+    .map((item, index) => ({
+      id: text(item.id) || `q_${index}_${createId().slice(0, 6)}`,
+      type: allowed.includes(item.type) ? item.type : 'textarea',
+      label: text(item.label),
+      help: text(item.help),
+      options: Array.isArray(item.options) ? item.options.map(text).filter(Boolean).join(', ') : text(item.options),
+      required: Boolean(item.required) && item.type !== 'section',
+    }))
+    .filter((item) => item.label);
+}
+
+function sanitizeAnswers(answers, questions) {
+  const ids = new Set((questions || []).map((item) => item.id));
+  return Object.fromEntries(
+    Object.entries(answers || {})
+      .filter(([key]) => ids.has(key))
+      .map(([key, value]) => [key, Array.isArray(value) ? value.map(text).filter(Boolean) : String(value ?? '').slice(0, 10000)])
+  );
+}
+
+// Lets the studio know by email when a client submits (best effort; Vela still shows it in-app).
+async function notifyStudioOfSubmission(responseId) {
+  try {
+    const token = await auth?.currentUser?.getIdToken();
+    if (!token) return;
+    await fetch('/api/notify-submission', {
+      method: 'POST',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ responseId }),
+    });
+  } catch {
+    // Email is a convenience; the submission itself has already been saved.
+  }
+}
+
+export const questionnairesAPI = {
+  async listTemplates() {
+    const session = await requireStudioSession();
+    const snapshot = await getDocs(query(collection(db, 'questionnaires'), where('user_id', '==', session.firebaseUser.uid)));
+    return snapshot.docs.map((item) => ({ id: item.id, ...item.data() })).sort((a, b) => compareDatesDesc(a, b, 'updated_at'));
+  },
+
+  async getTemplate(id) {
+    const session = await requireStudioSession();
+    return getAccessibleDoc('questionnaires', id, session);
+  },
+
+  async createTemplate(body) {
+    const session = await requireStudioSession();
+    const payload = {
+      user_id: session.firebaseUser.uid,
+      title: text(body.title) || 'Untitled questionnaire',
+      description: text(body.description),
+      questions: sanitizeQuestions(body.questions),
+      created_at: now(),
+      updated_at: now(),
+    };
+    const reference = await addDoc(collection(db, 'questionnaires'), payload);
+    return { id: reference.id, ...payload };
+  },
+
+  async updateTemplate(id, body) {
+    const session = await requireStudioSession();
+    await getAccessibleDoc('questionnaires', id, session);
+    const payload = {
+      title: text(body.title) || 'Untitled questionnaire',
+      description: text(body.description),
+      questions: sanitizeQuestions(body.questions),
+      updated_at: now(),
+    };
+    await updateDoc(doc(db, 'questionnaires', id), payload);
+    return { id, ...payload };
+  },
+
+  async removeTemplate(id) {
+    return deleteStudioDoc('questionnaires', id);
+  },
+
+  async listResponses() {
+    const rows = await listAccessibleDocs('questionnaire_responses');
+    return rows.sort((a, b) => compareDatesDesc(a, b, 'updated_at'));
+  },
+
+  async getResponse(id) {
+    const session = await requireSession();
+    return getAccessibleDoc('questionnaire_responses', id, session);
+  },
+
+  async send({ template_id, client_id, project_id, stage_index, note }) {
+    const session = await requireStudioSession();
+    if (!template_id || !client_id) {
+      throw new Error('Choose a questionnaire and a client.');
+    }
+    const template = await getAccessibleDoc('questionnaires', template_id, session);
+    const client = await getStudioClient(client_id, session);
+    const questions = sanitizeQuestions(template.questions);
+    if (!questions.some((item) => item.type !== 'section')) {
+      throw new Error('This questionnaire has no questions yet.');
+    }
+    let project = null;
+    if (project_id) {
+      project = await getAccessibleDoc('projects', project_id, session);
+    }
+    const payload = {
+      user_id: session.firebaseUser.uid,
+      studio_email: session.firebaseUser.email || '',
+      client_id: client.id,
+      client_name: client.name,
+      contact_name: client.contact || '',
+      project_id: project?.id || '',
+      project_service: project?.service || '',
+      stage_index: Number.isFinite(Number(stage_index)) ? Number(stage_index) : 0,
+      template_id: template.id,
+      title: template.title,
+      description: text(note) || template.description || '',
+      questions,
+      answers: {},
+      status: 'sent',
+      seen_by_studio: false,
+      sent_at: now(),
+      updated_at: now(),
+      submitted_at: '',
+    };
+    const reference = await addDoc(collection(db, 'questionnaire_responses'), payload);
+    return { id: reference.id, ...payload };
+  },
+
+  async saveAnswers(id, answers) {
+    const session = await requireClientSession();
+    const current = await getAccessibleDoc('questionnaire_responses', id, session);
+    if (current.status === 'submitted') {
+      throw new Error('This questionnaire has already been sent to the studio.');
+    }
+    const payload = { answers: sanitizeAnswers(answers, current.questions), status: 'in_progress', updated_at: now() };
+    await updateDoc(doc(db, 'questionnaire_responses', id), payload);
+    return { ...current, ...payload };
+  },
+
+  async submit(id, answers) {
+    const session = await requireClientSession();
+    const current = await getAccessibleDoc('questionnaire_responses', id, session);
+    if (current.status === 'submitted') {
+      return current;
+    }
+    const stamp = now();
+    const payload = { answers: sanitizeAnswers(answers, current.questions), status: 'submitted', submitted_at: stamp, updated_at: stamp };
+    await updateDoc(doc(db, 'questionnaire_responses', id), payload);
+    notifyStudioOfSubmission(id);
+    return { ...current, ...payload };
+  },
+
+  async markSeen(id) {
+    const session = await requireStudioSession();
+    await getAccessibleDoc('questionnaire_responses', id, session);
+    await updateDoc(doc(db, 'questionnaire_responses', id), { seen_by_studio: true });
+    return { success: true };
+  },
+
+  async reopen(id) {
+    const session = await requireStudioSession();
+    await getAccessibleDoc('questionnaire_responses', id, session);
+    const payload = { status: 'in_progress', seen_by_studio: false, submitted_at: '', updated_at: now() };
+    await updateDoc(doc(db, 'questionnaire_responses', id), payload);
+    return payload;
+  },
+
+  async removeResponse(id) {
+    return deleteStudioDoc('questionnaire_responses', id);
+  },
+
+  // Live updates for the studio, so a new submission shows up without reloading.
+  subscribeResponses(onChange, onError = () => {}) {
+    let unsubscribe = () => {};
+    let cancelled = false;
+    requireStudioSession()
+      .then((session) => {
+        if (cancelled) return;
+        unsubscribe = onSnapshot(
+          query(collection(db, 'questionnaire_responses'), where('user_id', '==', session.firebaseUser.uid)),
+          (snapshot) => onChange(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
+          onError
+        );
+      })
+      .catch(onError);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   },
 };

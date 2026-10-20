@@ -36,6 +36,7 @@ export default function Shell({ nav, home, logoVariant = 'white', logoWidth = 11
               <NavLink to={item.to} end={item.to === home} className={({ isActive }) => `ni${isActive ? ' active' : ''}`}>
                 <Icon name={item.icon} />
                 {item.label}
+                {item.badge ? <span className="ni-badge" aria-label={`${item.badge} new`}>{item.badge}</span> : null}
               </NavLink>
             </React.Fragment>
           ))}

@@ -24,6 +24,10 @@ const PATHS = {
   edit: <><path d="m14.5 5.5 4 4L9 19H5v-4z" /><path d="m12.5 7.5 4 4" /></>,
   copy: <><rect x="8.5" y="8.5" width="11" height="11" rx="1.5" /><path d="M15.5 8.5V6A1.5 1.5 0 0 0 14 4.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5" /></>,
   check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
+  clipboard: <><rect x="5" y="4.5" width="14" height="16" rx="1.5" /><path d="M9 4.5V3.5h6v1" /><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4" /></>,
+  bell: <><path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2h-14z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>,
+  send: <><path d="M20.5 3.5 3.5 10.5l7 3 3 7z" /><path d="m10.5 13.5 4-4" /></>,
+  print: <><path d="M7 9V4h10v5" /><rect x="4" y="9" width="16" height="7" rx="1.5" /><path d="M7 14h10v6H7z" /></>,
   key: <><circle cx="8" cy="15" r="3.5" /><path d="m10.5 12.5 8-8M15.5 7.5l2.5 2.5" /></>,
 };
 

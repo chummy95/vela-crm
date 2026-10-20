@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { JourneyRail } from '../components/ProjectJourney';
 import { useAuth } from '../hooks/useAuth';
-import { clientsAPI, contractsAPI, eventsAPI, invoicesAPI, messagesAPI, projectsAPI, proposalsAPI } from '../utils/api';
+import { clientsAPI, contractsAPI, eventsAPI, invoicesAPI, messagesAPI, projectsAPI, proposalsAPI, questionnairesAPI } from '../utils/api';
+import { progress } from '../utils/questionnaires';
 import { daysFromToday, formatDate, formatMoney, greeting, isOverdue, relativeDay, stageLabel, stageLabels } from '../utils/format';
 
 export default function PortalDashboard() {
   const { user } = useAuth();
-  const [data, setData] = useState({ client: null, projects: [], invoices: [], proposals: [], contracts: [], events: [], messages: [] });
+  const [data, setData] = useState({ client: null, projects: [], invoices: [], proposals: [], contracts: [], events: [], messages: [], forms: [] });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
 
@@ -16,19 +17,29 @@ export default function PortalDashboard() {
     Promise.all([
       clientsAPI.list(), projectsAPI.list(), invoicesAPI.list(), proposalsAPI.list(), contractsAPI.list(), eventsAPI.list(),
       messagesAPI.thread(user?.client_id).catch(() => []),
+      questionnairesAPI.listResponses().catch(() => []),
     ])
-      .then(([clients, projects, invoices, proposals, contracts, events, messages]) => {
-        setData({ client: clients[0] || null, projects, invoices, proposals, contracts, events, messages });
+      .then(([clients, projects, invoices, proposals, contracts, events, messages, forms]) => {
+        setData({ client: clients[0] || null, projects, invoices, proposals, contracts, events, messages, forms });
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoaded(true));
   }, [user?.client_id]);
 
-  const { client, projects, invoices, proposals, contracts, events, messages } = data;
+  const { client, projects, invoices, proposals, contracts, events, messages, forms } = data;
   const firstName = String(user?.name || '').split(' ')[0];
 
   const todo = useMemo(() => {
     const items = [];
+    forms.filter((f) => f.status !== 'submitted').forEach((f) => {
+      const p = progress(f.questions, f.answers);
+      items.push({
+        key: `qr-${f.id}`, level: 'info',
+        title: f.status === 'in_progress' ? `Finish your ${f.title.charAt(0).toLowerCase()}${f.title.slice(1)}` : `Fill in your ${f.title.charAt(0).toLowerCase()}${f.title.slice(1)}`,
+        sub: f.status === 'in_progress' ? `${p.done} of ${p.total} answered, saved as you go` : `${p.total} questions from the studio`,
+        to: `/portal/questionnaires/${f.id}`,
+      });
+    });
     proposals.filter((p) => p.status === 'sent').forEach((p) => items.push({
       key: `pp-${p.id}`, level: 'info', title: `Review the ${p.service || 'new'} proposal`, sub: `Sent ${relativeDay(p.date || p.created_at)}`, to: `/portal/proposals/${p.id}`,
     }));
@@ -41,7 +52,7 @@ export default function PortalDashboard() {
       sub: `${i.description || 'Invoice'}${i.due_date ? `, due ${relativeDay(i.due_date)}` : ''}`, to: `/portal/invoices/${i.id}`,
     }));
     return items;
-  }, [proposals, contracts, invoices]);
+  }, [proposals, contracts, invoices, forms]);
 
   const upcoming = events.filter((e) => (daysFromToday(e.date) ?? -1) >= 0).sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)).slice(0, 3);
   const lastMessage = messages[messages.length - 1];

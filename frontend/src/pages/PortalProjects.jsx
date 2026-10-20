@@ -3,7 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import Icon from '../components/Icon';
 import Pill from '../components/Pill';
 import { JourneyRail } from '../components/ProjectJourney';
-import { projectsAPI } from '../utils/api';
+import { projectsAPI, questionnairesAPI } from '../utils/api';
+import { RESPONSE_STATUS, progress } from '../utils/questionnaires';
 import { formatDate, stageLabel, stageLabels } from '../utils/format';
 
 function isDone(p) {
@@ -14,11 +15,13 @@ export default function PortalProjects() {
   const params = useParams();
   const routeId = (params['*'] || '').split('/')[0] || '';
   const [projects, setProjects] = useState([]);
+  const [forms, setForms] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     projectsAPI.list().then(setProjects).catch((err) => setError(err.message)).finally(() => setLoaded(true));
+    questionnairesAPI.listResponses().then(setForms).catch(() => {});
   }, []);
 
   const project = useMemo(() => projects.find((p) => p.id === routeId) || null, [projects, routeId]);
@@ -64,6 +67,7 @@ export default function PortalProjects() {
               <ol className="panel rows" style={{ listStyle: 'none' }}>
                 {labels.map((label, index) => {
                   const files = (project.files || []).filter((f) => Number(f.stage_index || 0) === index);
+                  const stageForms = forms.filter((f) => f.project_id === project.id && Number(f.stage_index || 0) === index);
                   const state = done || index < current ? 'done' : index === current ? 'now' : 'next';
                   return (
                     <li key={label} className="row" style={{ cursor: 'default' }}>
@@ -73,6 +77,21 @@ export default function PortalProjects() {
                         <span className="row-sub" style={{ display: 'block' }}>
                           {state === 'now' ? 'In progress' : state === 'done' ? 'Done' : 'Coming up'}{signed.has(index) ? ', approved by you' : ''}
                         </span>
+                        {stageForms.map((f) => {
+                          const pr = progress(f.questions, f.answers);
+                          return (
+                            <Link key={f.id} to={`/portal/questionnaires/${f.id}`} className="stage-form">
+                              <Icon name="clipboard" size={16} />
+                              <span className="row-main">
+                                <span style={{ display: 'block', fontWeight: 500, color: 'var(--ink)' }}>{f.title}</span>
+                                <span className="row-sub" style={{ display: 'block' }}>
+                                  {f.status === 'submitted' ? 'Sent to the studio' : f.status === 'in_progress' ? `${pr.done} of ${pr.total} answered` : 'Waiting for your answers'}
+                                </span>
+                              </span>
+                              <Pill status={RESPONSE_STATUS[f.status]?.pill || 'pending'} label={f.status === 'submitted' ? 'Sent' : f.status === 'in_progress' ? 'Continue' : 'Start'} />
+                            </Link>
+                          );
+                        })}
                         {files.length > 0 && (
                           <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                             {files.map((f) => <span key={f.id} className="pill" style={{ background: 'var(--paper)', color: 'var(--ink)', border: '1px solid var(--line)' }}>{f.name}{f.file_type ? ` (${f.file_type})` : ''}</span>)}
