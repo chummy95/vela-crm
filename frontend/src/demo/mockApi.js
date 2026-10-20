@@ -2,6 +2,7 @@
 // Used only by `npm run demo` (vite.demo.config.js). Never touches Firebase.
 import { brandStrategyStarter, projectFeedbackStarter } from '../utils/questionnaires';
 import { sanitizeWorkflow } from '../utils/workflow';
+import { DEFAULT_STUDIO_PROFILE, formatInvoiceNumber, invoiceTotals } from '../utils/invoices';
 
 export const USER_ROLES = { STUDIO: 'studio', CLIENT: 'client' };
 export function normalizeRole(value) {
@@ -32,10 +33,10 @@ const db = {
     { id: 'pr4', client_id: 'c2', client_name: 'Olive & Ash', client_color: '#5E6B4E', service: 'Brand Identity', value: '4200', stage: 2, start_date: day(-80), timeline: '8 weeks', status: 'delivered', files: [], signoffs: [], created_at: iso(day(-80)) },
   ],
   invoices: [
-    { id: 'i1', client_id: 'c1', client_name: 'Maison Noor', project_id: 'pr1', description: 'Brand Identity — 50% deposit', amount: '2400', due_date: day(-30), status: 'paid', created_at: iso(day(-34)) },
+    { id: 'i1', number: 'INV-0001', issue_date: day(-34), vat_rate: '20', vat_label: 'VAT', currency: 'GBP', items: [{ description: 'Brand identity, 50% deposit', quantity: 1, unit_price: 2000 }], subtotal: '2000', vat_amount: '400', bill_to: { name: 'Maison Noor', contact: 'Layla Haddad', email: 'layla@maisonnoor.com', address: 'King Fahd Road\nRiyadh 12271\nSaudi Arabia' }, paid_at: iso(day(-31)), client_id: 'c1', client_name: 'Maison Noor', project_id: 'pr1', description: 'Brand Identity — 50% deposit', amount: '2400', due_date: day(-30), status: 'paid', created_at: iso(day(-34)) },
     { id: 'i2', client_id: 'c3', client_name: 'Saha Retreats', project_id: 'pr2', description: 'Web Design — deposit', amount: '3250', due_date: day(4), status: 'unpaid', created_at: iso(day(-18)) },
     { id: 'i3', client_id: 'c4', client_name: 'Lumen Skin', project_id: 'pr3', description: 'Packaging — deposit', amount: '1950', due_date: day(-3), status: 'unpaid', created_at: iso(day(-9)) },
-    { id: 'i5', client_id: 'c1', client_name: 'Maison Noor', project_id: 'pr1', description: 'Brand Identity — final balance', amount: '2400', due_date: day(12), status: 'unpaid', created_at: iso(day(-1)) },
+    { id: 'i5', number: 'INV-0005', issue_date: day(-1), vat_rate: '20', vat_label: 'VAT', currency: 'GBP', items: [{ description: 'Brand identity, final balance', quantity: 1, unit_price: 1600 }, { description: 'Packaging design, 2 SKUs', quantity: 2, unit_price: 200 }], subtotal: '2000', vat_amount: '400', bill_to: { name: 'Maison Noor', contact: 'Layla Haddad', email: 'layla@maisonnoor.com', address: 'King Fahd Road\nRiyadh 12271\nSaudi Arabia' }, notes: '', client_id: 'c1', client_name: 'Maison Noor', project_id: 'pr1', description: 'Brand Identity — final balance', amount: '2400', due_date: day(12), status: 'unpaid', created_at: iso(day(-1)) },
     { id: 'i4', client_id: 'c2', client_name: 'Olive & Ash', project_id: 'pr4', description: 'Brand Identity — final balance', amount: '2100', due_date: day(-45), status: 'paid', created_at: iso(day(-50)) },
   ],
   proposals: [
@@ -208,12 +209,69 @@ export const projectsAPI = {
   },
 };
 
+const studioProfile = {
+  ...DEFAULT_STUDIO_PROFILE,
+  business_name: 'Creative Mayaa Studio',
+  address: '71-75 Shelton Street\nLondon WC2H 9JQ\nUnited Kingdom',
+  email: 'hello@creativemayaa.studio',
+  website: 'creativemayaa.studio',
+  vat_number: 'GB 123 4567 89',
+  vat_rate: '20',
+  next_invoice_number: 6,
+  bank_details: 'Creative Mayaa Studio Ltd\nSort code 04-00-04\nAccount 12345678',
+  invoice_notes: 'Thank you for your business. Payment is due within 14 days.',
+  payment_link: 'https://buy.stripe.com/test_example',
+  card_payments: true,
+};
+
+export const studioProfileAPI = {
+  async get() { return delay({ ...studioProfile }); },
+  async save(body) { Object.assign(studioProfile, body); return delay({ ...studioProfile }); },
+};
+
+function withTotals(row) {
+  const t = invoiceTotals(row);
+  return Object.assign(row, { subtotal: String(t.subtotal), vat_amount: String(t.vat), amount: String(t.total) });
+}
+
 export const invoicesAPI = {
   ...crud('invoices'),
-  async updateStatus(rid, status) {
+  async create(body) {
+    const client = byId('clients', body.client_id);
+    const row = withTotals({
+      id: id(), created_at: new Date().toISOString(), client_name: client?.name || '', status: 'unpaid',
+      number: formatInvoiceNumber(studioProfile.invoice_prefix, studioProfile.next_invoice_number++),
+      issue_date: new Date().toISOString().slice(0, 10), vat_rate: studioProfile.vat_rate, vat_label: studioProfile.vat_label, currency: studioProfile.currency,
+      bill_to: { name: client?.name || '', contact: client?.contact || '', email: client?.email || '', address: '' },
+      ...body,
+      items: body.items || [{ description: body.description, quantity: 1, unit_price: body.amount }],
+    });
+    db.invoices.unshift(row);
+    return delay(row);
+  },
+  async update(rid, body) {
+    const row = byId('invoices', rid);
+    Object.assign(row, body);
+    if (body.items || body.vat_rate !== undefined) withTotals(row);
+    return delay(row);
+  },
+  async updateStatus(rid, status, extra = {}) {
     const row = byId('invoices', rid);
     row.status = typeof status === 'object' ? status.status : status;
-    return delay({ success: true, status: row.status });
+    row.paid_at = row.status === 'paid' ? (extra.paid_at || new Date().toISOString()) : '';
+    row.payment_method = extra.payment_method || '';
+    return delay({ success: true, status: row.status, paid_at: row.paid_at });
+  },
+};
+
+export const paymentsAPI = {
+  async status() { return { stripe: true }; },
+  async checkout(rid) { return `/portal/invoices/${rid}?paid=1`; },
+  async check(ids) {
+    if (typeof window !== 'undefined' && /[?&]paid=1/.test(window.location.search)) {
+      return Object.fromEntries(ids.map((x) => [x, { paid_at: new Date().toISOString(), payment_ref: 'pi_demo' }]));
+    }
+    return {};
   },
 };
 

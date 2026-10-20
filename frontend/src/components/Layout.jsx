@@ -16,6 +16,7 @@ const NAV = [
   { to: '/invoices',  label: 'Invoices',  icon: 'receipt' },
   { to: '/forms',     label: 'Enquiries', icon: 'inbox',    section: 'Studio' },
   { to: '/analytics', label: 'Analytics', icon: 'chart' },
+  { to: '/settings',  label: 'Settings',  icon: 'settings' },
 ];
 
 export default function Layout() {

@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
-import { questionnairesAPI, reviewsAPI } from '../utils/api';
+import { invoicesAPI, paymentsAPI, questionnairesAPI, reviewsAPI } from '../utils/api';
+import { money } from '../utils/invoices';
 
 const AlertsContext = createContext({ responses: [], unseen: [], reviews: [], reviewUnseen: [], loaded: false });
 
@@ -28,6 +29,33 @@ export function QuestionnaireAlertsProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const known = useRef(null);
   const knownReviews = useRef(null);
+
+  // Card payments made through Stripe: mark those invoices paid (this also unlocks final files).
+  useEffect(() => {
+    let cancelled = false;
+    async function sync() {
+      try {
+        const { stripe } = await paymentsAPI.status();
+        if (!stripe || cancelled) return;
+        const unpaid = (await invoicesAPI.list()).filter((i) => i.status !== 'paid');
+        if (!unpaid.length) return;
+        const paid = await paymentsAPI.check(unpaid.map((i) => i.id));
+        for (const inv of unpaid) {
+          const hit = paid[inv.id];
+          if (!hit || cancelled) continue;
+          const changes = { status: 'paid', paid_at: hit.paid_at, payment_method: 'Stripe', payment_ref: hit.payment_ref || '' };
+          await invoicesAPI.updateStatus(inv.id, 'paid', changes);
+          window.dispatchEvent(new CustomEvent('vela:invoice-paid', { detail: { id: inv.id, changes } }));
+          setToasts((current) => [...current, { key: `pay:${inv.id}`, payment: { ...inv, ...changes } }].slice(-3));
+        }
+      } catch {
+        // Try again on the next check.
+      }
+    }
+    sync();
+    const timer = setInterval(sync, 3 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
 
   useEffect(() => {
     const stop = reviewsAPI.subscribe((rows) => {
@@ -103,10 +131,16 @@ export function QuestionnaireAlertsProvider({ children }) {
     <AlertsContext.Provider value={{ responses, unseen, reviews, reviewUnseen, loaded }}>
       {children}
       <div className="toasts" aria-live="polite">
-        {toasts.map(({ key, response: r, review }) => (
+        {toasts.map(({ key, response: r, review, payment }) => (
           <div key={key} className="toast" role="status">
-            <span className="toast-ico"><Icon name={review ? (review.status === 'approved' ? 'check' : 'message') : 'bell'} size={18} /></span>
-            {review ? (
+            <span className="toast-ico"><Icon name={payment ? 'receipt' : review ? (review.status === 'approved' ? 'check' : 'message') : 'bell'} size={18} /></span>
+            {payment ? (
+              <div style={{ minWidth: 0 }}>
+                <div className="row-title">{payment.client_name} paid {money(payment.amount, payment.currency || 'GBP')}</div>
+                <div className="row-sub">{payment.number || 'Invoice'}, by card through Stripe</div>
+                <Link to={`/invoices/${payment.id}`} onClick={() => dismiss(key)} style={{ fontSize: 13, fontWeight: 500 }}>Open</Link>
+              </div>
+            ) : review ? (
               <div style={{ minWidth: 0 }}>
                 <div className="row-title">{reviewActivityText(review)}</div>
                 <div className="row-sub">{review.client_name}{review.stage_label ? `, ${review.stage_label}` : ''}</div>

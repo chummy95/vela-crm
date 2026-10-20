@@ -20,6 +20,7 @@ import {
 } from 'firebase/firestore';
 import { auth, createSecondaryFirebaseServices, db, ensureFirebaseConfigured } from '../lib/firebase';
 import { sanitizeWorkflow, workflowLabels } from './workflow';
+import { DEFAULT_STUDIO_PROFILE, formatInvoiceNumber, invoiceTotals, toNumber } from './invoices';
 
 export const USER_ROLES = {
   STUDIO: 'studio',
@@ -652,6 +653,110 @@ export const projectsAPI = {
   },
 };
 
+const PROFILE_TEXT_FIELDS = ['business_name', 'address', 'email', 'phone', 'website', 'company_number', 'vat_number', 'currency', 'vat_label', 'invoice_prefix', 'bank_details', 'invoice_notes', 'payment_link'];
+
+function cleanPaymentLink(value) {
+  const link = text(value);
+  if (!link) return '';
+  const withScheme = /^https?:\/\//i.test(link) ? link : `https://${link}`;
+  try {
+    const url = new URL(withScheme);
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+// The studio's business details, logo and invoice settings. Clients can read their studio's profile
+// so invoices show the right branding in the portal.
+export const studioProfileAPI = {
+  async get(uid) {
+    const session = await requireSession();
+    const owner = uid || (isStudioProfile(session.profile) ? session.firebaseUser.uid : session.profile.studio_owner_id);
+    if (!owner) return { ...DEFAULT_STUDIO_PROFILE };
+    const snapshot = await getDoc(doc(db, 'studio_profiles', owner));
+    const data = snapshot.exists() ? snapshot.data() : {};
+    return {
+      ...DEFAULT_STUDIO_PROFILE,
+      business_name: session.profile.studio_name || '',
+      email: isStudioProfile(session.profile) ? session.firebaseUser.email || '' : '',
+      currency: session.profile.currency || 'GBP',
+      ...data,
+      id: owner,
+    };
+  },
+
+  async save(body) {
+    const session = await requireStudioSession();
+    const uid = session.firebaseUser.uid;
+    const payload = { user_id: uid, updated_at: now() };
+    PROFILE_TEXT_FIELDS.forEach((key) => { if (body[key] !== undefined) payload[key] = text(body[key]).slice(0, 2000); });
+    if (body.payment_link !== undefined) {
+      payload.payment_link = cleanPaymentLink(body.payment_link);
+      if (text(body.payment_link) && !payload.payment_link) throw new Error('The payment link must be a web address starting with https://');
+    }
+    if (body.logo !== undefined) {
+      const logo = String(body.logo || '');
+      if (logo && !/^data:image\/(png|jpeg);base64,/.test(logo)) throw new Error('Upload the logo as an image.');
+      if (logo.length > 290000) throw new Error('That logo is too large.');
+      payload.logo = logo;
+    }
+    if (body.vat_rate !== undefined) payload.vat_rate = String(Math.max(0, Math.min(100, toNumber(body.vat_rate))));
+    if (body.payment_terms_days !== undefined) payload.payment_terms_days = Math.max(0, Math.min(365, Math.round(toNumber(body.payment_terms_days))));
+    if (body.next_invoice_number !== undefined) payload.next_invoice_number = Math.max(1, Math.round(toNumber(body.next_invoice_number)) || 1);
+    if (body.card_payments !== undefined) payload.card_payments = Boolean(body.card_payments);
+    await setDoc(doc(db, 'studio_profiles', uid), payload, { merge: true });
+    if (payload.currency || payload.business_name !== undefined) {
+      const profileChanges = stripUndefinedValues({ currency: payload.currency || undefined, studio_name: payload.business_name || undefined });
+      if (Object.keys(profileChanges).length) await updateDoc(doc(db, 'users', uid), profileChanges);
+    }
+    return this.get(uid);
+  },
+};
+
+function cleanItems(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((i) => ({ description: text(i.description).slice(0, 500), quantity: toNumber(i.quantity) || 1, unit_price: toNumber(i.unit_price) }))
+    .filter((i) => i.description || i.unit_price)
+    .slice(0, 50);
+}
+
+// Fields an invoice form can set; totals are always worked out here, never trusted from the form.
+function invoiceFields(body, current = {}) {
+  const items = body.items !== undefined ? cleanItems(body.items) : undefined;
+  const merged = { ...current, ...(items ? { items } : {}), ...(body.vat_rate !== undefined ? { vat_rate: body.vat_rate } : {}) };
+  const totals = invoiceTotals(merged);
+  const fields = stripUndefinedValues({
+    description: body.description !== undefined ? text(body.description) : (items ? (items[0]?.description || current.description || '') : undefined),
+    items,
+    vat_rate: body.vat_rate !== undefined ? String(Math.max(0, Math.min(100, toNumber(body.vat_rate)))) : undefined,
+    vat_label: body.vat_label !== undefined ? text(body.vat_label).slice(0, 20) || 'VAT' : undefined,
+    currency: body.currency !== undefined ? text(body.currency).toUpperCase().slice(0, 3) || 'GBP' : undefined,
+    issue_date: body.issue_date !== undefined ? text(body.issue_date) : undefined,
+    due_date: body.due_date !== undefined ? text(body.due_date) : undefined,
+    notes: body.notes !== undefined ? text(body.notes).slice(0, 2000) : undefined,
+    payment_link: body.payment_link !== undefined ? cleanPaymentLink(body.payment_link) : undefined,
+    bill_to: body.bill_to !== undefined ? {
+      name: text(body.bill_to?.name).slice(0, 200),
+      contact: text(body.bill_to?.contact).slice(0, 200),
+      email: text(body.bill_to?.email).slice(0, 200),
+      address: text(body.bill_to?.address).slice(0, 1000),
+      vat_number: text(body.bill_to?.vat_number).slice(0, 100),
+    } : undefined,
+  });
+  if (items || body.vat_rate !== undefined || body.amount !== undefined) {
+    if (!items && body.amount !== undefined && !current.items) {
+      // Older, single-amount invoices.
+      fields.amount = String(toNumber(body.amount));
+    } else {
+      fields.subtotal = String(totals.subtotal);
+      fields.vat_amount = String(totals.vat);
+      fields.amount = String(totals.total);
+    }
+  }
+  return fields;
+}
+
 export const invoicesAPI = {
   async list() {
     const rows = await listAccessibleDocs('invoices');
@@ -665,25 +770,37 @@ export const invoicesAPI = {
 
   async create(body) {
     const session = await requireStudioSession();
-    const amount = text(body.amount);
-    if (!body.client_id || !amount) {
-      throw new Error('Client and amount are required.');
+    if (!body.client_id) {
+      throw new Error('Choose a client for this invoice.');
     }
-
     const client = await getStudioClient(body.client_id, session);
+    const profile = await studioProfileAPI.get(session.firebaseUser.uid);
+    const fields = invoiceFields({
+      vat_rate: profile.vat_rate,
+      vat_label: profile.vat_label,
+      currency: profile.currency,
+      ...body,
+      items: body.items || [{ description: body.description, quantity: 1, unit_price: body.amount }],
+      bill_to: body.bill_to || { name: client.name, contact: client.contact, email: client.email, address: '' },
+    });
+    if (!toNumber(fields.amount)) {
+      throw new Error('Add at least one line with a price.');
+    }
+    const counter = Number(profile.next_invoice_number) || 1;
     const payload = {
       user_id: session.firebaseUser.uid,
       client_id: client.id,
       client_name: client.name,
       project_id: text(body.project_id),
-      description: text(body.description),
-      amount,
-      due_date: text(body.due_date),
+      number: formatInvoiceNumber(profile.invoice_prefix, counter),
+      issue_date: new Date().toISOString().slice(0, 10),
       status: text(body.status) || 'unpaid',
+      paid_at: '',
       created_at: now(),
+      ...fields,
     };
-
     const reference = await addDoc(collection(db, 'invoices'), payload);
+    await setDoc(doc(db, 'studio_profiles', session.firebaseUser.uid), { user_id: session.firebaseUser.uid, next_invoice_number: counter + 1 }, { merge: true });
     return { id: reference.id, ...payload };
   },
 
@@ -695,28 +812,73 @@ export const invoicesAPI = {
       client_id: body.client_id !== undefined ? client?.id || current.client_id : undefined,
       client_name: body.client_id !== undefined ? client?.name || current.client_name : undefined,
       project_id: body.project_id !== undefined ? text(body.project_id) : undefined,
-      description: body.description !== undefined ? text(body.description) : undefined,
-      amount: body.amount !== undefined ? text(body.amount) : undefined,
-      due_date: body.due_date !== undefined ? text(body.due_date) : undefined,
       status: body.status !== undefined ? text(body.status) : undefined,
+      ...invoiceFields(body, current),
     });
     await updateDoc(doc(db, 'invoices', id), payload);
     return getAccessibleDoc('invoices', id, session);
   },
 
-  async updateStatus(id, status) {
+  async updateStatus(id, status, extra = {}) {
     const session = await requireStudioSession();
     await getAccessibleDoc('invoices', id, session);
     const nextStatus = text(status);
     if (!['paid', 'unpaid'].includes(nextStatus)) {
       throw new Error('Invoice status is invalid.');
     }
-    await updateDoc(doc(db, 'invoices', id), { status: nextStatus });
-    return { success: true, status: nextStatus };
+    const payload = {
+      status: nextStatus,
+      paid_at: nextStatus === 'paid' ? text(extra.paid_at) || now() : '',
+      payment_method: nextStatus === 'paid' ? text(extra.payment_method) : '',
+      payment_ref: nextStatus === 'paid' ? text(extra.payment_ref) : '',
+    };
+    await updateDoc(doc(db, 'invoices', id), payload);
+    return { success: true, ...payload };
   },
 
   async remove(id) {
     return deleteStudioDoc('invoices', id);
+  },
+};
+
+// Online card payments through Stripe (when the studio has set it up).
+export const paymentsAPI = {
+  async status() {
+    try {
+      const res = await fetch('/api/pay');
+      return res.ok ? await res.json() : { stripe: false };
+    } catch {
+      return { stripe: false };
+    }
+  },
+
+  async checkout(invoiceId) {
+    await requireSession();
+    const token = await auth.currentUser.getIdToken();
+    const res = await fetch('/api/pay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'checkout', invoiceId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.url) throw new Error(data.error || 'Card payment isn’t available right now.');
+    return data.url;
+  },
+
+  // Which of these invoices Stripe says are paid: { [id]: { paid_at, payment_ref } }.
+  async check(invoiceIds, sessionId = '') {
+    const ids = (invoiceIds || []).filter(Boolean).slice(0, 50);
+    if (!ids.length) return {};
+    await requireSession();
+    const token = await auth.currentUser.getIdToken();
+    const res = await fetch('/api/pay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'status', invoiceIds: ids, sessionId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Couldn’t check payments.');
+    return data.paid || {};
   },
 };
 

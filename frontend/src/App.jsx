@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import Review from './pages/Review';
+import Settings from './pages/Settings';
 import PortalReview from './pages/PortalReview';
 import Clients from './pages/Clients';
 import Questionnaires from './pages/Questionnaires';
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="forms" element={<Forms />} />
           <Route path="messages" element={<Messages />} />
           <Route path="analytics" element={<Analytics />} />
+          <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="/portal" element={<Protected allowedRole="client"><PortalLayout /></Protected>}>
           <Route index element={<PortalDashboard />} />

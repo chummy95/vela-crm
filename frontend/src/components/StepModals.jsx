@@ -18,7 +18,7 @@ export function FinalInvoiceModal({ open, onClose, project, step, invoices = [],
   const linkedElsewhere = useMemo(() => new Set(getWorkflow(project || {}).flatMap((st) => st.steps).map((s) => s.invoice_id).filter(Boolean)), [project]);
   const candidates = useMemo(() => invoices.filter((i) => i.project_id === project?.id && !linkedElsewhere.has(i.id)), [invoices, project, linkedElsewhere]);
   const remaining = useMemo(() => {
-    const billed = invoices.filter((i) => i.project_id === project?.id).reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+    const billed = invoices.filter((i) => i.project_id === project?.id).reduce((sum, i) => sum + (Number(i.subtotal ?? i.amount) || 0), 0);
     return Math.max(0, (Number(project?.value) || 0) - billed);
   }, [invoices, project]);
 
@@ -42,7 +42,7 @@ export function FinalInvoiceModal({ open, onClose, project, step, invoices = [],
     try {
       let invoice = candidates.find((i) => i.id === choice);
       if (!invoice) {
-        invoice = await invoicesAPI.create({ client_id: project.client_id, project_id: project.id, description: form.description, amount: form.amount, due_date: form.due_date, status: 'unpaid' });
+        invoice = await invoicesAPI.create({ client_id: project.client_id, project_id: project.id, items: [{ description: form.description, quantity: 1, unit_price: form.amount }], due_date: form.due_date, status: 'unpaid' });
       }
       const workflow = copyWorkflow(project).map((stage) => ({ ...stage, steps: stage.steps.map((s) => (s.id === step.id ? { ...s, invoice_id: invoice.id } : s)) }));
       await projectsAPI.update(project.id, { workflow });
@@ -100,7 +100,7 @@ export function FinalInvoiceModal({ open, onClose, project, step, invoices = [],
             </div>
             <div className="fi-row">
               <div className="fc">
-                <label className="fc-label" htmlFor="fi-amount">Amount</label>
+                <label className="fc-label" htmlFor="fi-amount">Amount <span className="faint" style={{ fontWeight: 400 }}>(before VAT)</span></label>
                 <input id="fi-amount" className="fi" inputMode="decimal" value={form.amount} onChange={set('amount')} required placeholder="2400" />
                 {Number(project?.value) > 0 && <div className="faint" style={{ fontSize: 12.5, marginTop: 4 }}>{formatMoney(remaining, currency)} of {formatMoney(project.value, currency)} not invoiced yet</div>}
               </div>
