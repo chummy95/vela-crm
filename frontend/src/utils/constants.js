@@ -1,11 +1,11 @@
 export const STAGES = {
-  brand:     ['Strategy','Brand Identity Presentation','Brand Touchpoints','First Draft','Final Draft','Offboarding'],
+  brand:     ['Strategy','Brand Identity Presentation','Sign-off & Handover'],
   packaging: ['Discovery & Strategy','Structural Design','Design Concepts','Design Refinement','Print Ready Files','Offboarding'],
   web:       ['Discovery & Strategy','Wireframes','Design Concepts','Full Design','Development','Launch','Offboarding'],
 };
 
 export const STAGE_ICONS = {
-  brand:     ['🎯','✨','🔤','📝','🏆','🎉'],
+  brand:     ['🎯','✨','🎉'],
   packaging: ['🎯','📐','🎨','🔄','🖨️','🎉'],
   web:       ['🎯','🗺️','🎨','💻','⚙️','🚀','🎉'],
 };

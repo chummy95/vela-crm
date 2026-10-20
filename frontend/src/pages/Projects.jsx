@@ -6,11 +6,15 @@ import Icon from '../components/Icon';
 import ClientMark from '../components/ClientMark';
 import { JourneyRail } from '../components/ProjectJourney';
 import SendQuestionnaire from '../components/SendQuestionnaire';
+import ProjectSteps from '../components/ProjectSteps';
+import ReviewComposer from '../components/ReviewComposer';
+import { EditStepsModal, FinalInvoiceModal } from '../components/StepModals';
 import { useAuth } from '../hooks/useAuth';
 import { useQuestionnaireAlerts } from '../hooks/useQuestionnaireAlerts';
-import { RESPONSE_STATUS, progress } from '../utils/questionnaires';
-import { clientsAPI, projectsAPI } from '../utils/api';
+import { RESPONSE_STATUS, STARTERS, progress } from '../utils/questionnaires';
+import { clientsAPI, invoicesAPI, projectsAPI, questionnairesAPI } from '../utils/api';
 import { formatDate, formatMoney, stageLabels } from '../utils/format';
+import { getWorkflow, stageComplete, stageSteps } from '../utils/workflow';
 
 const SERVICES = ['Brand Identity', 'Packaging Design', 'Web Design'];
 const FILTERS = [
@@ -96,8 +100,13 @@ export default function Projects() {
   const routeProjectId = (params['*'] || '').split('/')[0] || '';
   const { user } = useAuth();
   const currency = user?.currency || 'GBP';
-  const { responses } = useQuestionnaireAlerts();
-  const [sendStage, setSendStage] = useState(null);
+  const { responses, reviews } = useQuestionnaireAlerts();
+  const [sendDefaults, setSendDefaults] = useState(null);
+  const [invoices, setInvoices] = useState([]);
+  const [viewStage, setViewStage] = useState(null);
+  const [composer, setComposer] = useState(null);
+  const [invoiceStep, setInvoiceStep] = useState(null);
+  const [editSteps, setEditSteps] = useState(false);
 
   const [projects, setProjects] = useState([]);
   const [clients, setClients] = useState([]);
@@ -117,16 +126,15 @@ export default function Projects() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const [fileForm, setFileForm] = useState({ name: '', file_type: '' });
-  const [savingFile, setSavingFile] = useState(false);
   const [busy, setBusy] = useState(false);
   const [detailError, setDetailError] = useState('');
 
   useEffect(() => {
-    Promise.all([projectsAPI.list(), clientsAPI.list()])
-      .then(([projectRows, clientRows]) => {
+    Promise.all([projectsAPI.list(), clientsAPI.list(), invoicesAPI.list().catch(() => [])])
+      .then(([projectRows, clientRows, invoiceRows]) => {
         setProjects(projectRows);
         setClients(clientRows);
+        setInvoices(invoiceRows);
       })
       .catch((err) => setPageError(err.message))
       .finally(() => setLoaded(true));
@@ -137,7 +145,7 @@ export default function Projects() {
 
   useEffect(() => {
     setDetailError('');
-    setFileForm({ name: '', file_type: '' });
+    setViewStage(null);
   }, [routeProjectId]);
 
   const visible = useMemo(() => {
@@ -215,27 +223,13 @@ export default function Projects() {
   }
 
   async function moveTo(stage) {
-    const labels = stageLabels(project.service);
+    const labels = stageLabels(project);
     const next = Math.max(0, Math.min(labels.length - 1, stage));
     setBusy(true);
     setDetailError('');
     try {
       await projectsAPI.advStage(project.id, next);
       patchProject(project.id, { stage: next });
-    } catch (err) {
-      setDetailError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function signOffCurrent() {
-    const current = Number(project.stage || 0);
-    setBusy(true);
-    setDetailError('');
-    try {
-      await projectsAPI.signOff(project.id, current);
-      patchProject(project.id, { signoffs: Array.from(new Set([...(project.signoffs || []), current])) });
     } catch (err) {
       setDetailError(err.message);
     } finally {
@@ -256,18 +250,34 @@ export default function Projects() {
     }
   }
 
-  async function handleAddFile(event) {
-    event.preventDefault();
-    setSavingFile(true);
+  // Questionnaire steps: use the matching starter questionnaire, creating it the first time.
+  async function sendStepQuestionnaire(stageIndex, step) {
+    setDetailError('');
+    let templateId = '';
+    try {
+      if (step.template && STARTERS[step.template]) {
+        const starter = STARTERS[step.template]();
+        const templates = await questionnairesAPI.listTemplates();
+        const match = templates.find((t) => t.title === starter.title);
+        templateId = match ? match.id : (await questionnairesAPI.createTemplate(starter)).id;
+      }
+    } catch (err) {
+      setDetailError(err.message);
+      return;
+    }
+    setSendDefaults({ template_id: templateId, client_id: project.client_id, project_id: project.id, stage_index: stageIndex, step_id: step.id });
+  }
+
+  async function markInvoicePaid(invoice) {
+    setBusy(true);
     setDetailError('');
     try {
-      const file = await projectsAPI.addFile(project.id, { stage_index: Number(project.stage || 0), ...fileForm });
-      patchProject(project.id, { files: [...(project.files || []), file] });
-      setFileForm({ name: '', file_type: '' });
+      await invoicesAPI.updateStatus(invoice.id, 'paid');
+      setInvoices((prev) => prev.map((i) => (i.id === invoice.id ? { ...i, status: 'paid' } : i)));
     } catch (err) {
       setDetailError(err.message);
     } finally {
-      setSavingFile(false);
+      setBusy(false);
     }
   }
 
@@ -309,12 +319,22 @@ export default function Projects() {
       return <div className="content"><div className="muted">Loading…</div></div>;
     }
 
-    const labels = stageLabels(project.service);
+    const labels = stageLabels(project);
     const current = Math.min(Number(project.stage || 0), labels.length - 1);
     const done = isDone(project);
-    const signed = new Set((project.signoffs || []).map(Number));
     const atLast = current >= labels.length - 1;
-    const projectForms = responses.filter((r) => r.project_id === project.id);
+    const ctx = { reviews, responses, invoices };
+    const shown = viewStage ?? current;
+    const shownComplete = stageComplete(project, shown, ctx);
+    const currentComplete = stageComplete(project, current, ctx);
+    const stepIds = new Set(getWorkflow(project).flatMap((st) => st.steps.map((x) => x.id)));
+    const looseForms = responses.filter((r) => r.project_id === project.id && !stepIds.has(r.step_id) && !stageSteps(project, Number(r.stage_index || 0), ctx).some((x) => x.response?.id === r.id));
+    const stepActions = {
+      share: (step, kind, round) => setComposer({ step, kind, round, stageIndex: shown }),
+      sendQuestionnaire: (step) => sendStepQuestionnaire(shown, step),
+      invoice: (step) => setInvoiceStep(step),
+      markPaid: (step, invoice) => markInvoicePaid(invoice),
+    };
 
     return (
       <>
@@ -347,53 +367,68 @@ export default function Projects() {
 
             <section className="panel section" style={{ padding: '24px 24px 20px' }} aria-label="Stage journey">
               <JourneyRail project={project} />
-              <div style={{ marginTop: 26, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+              <div className="stage-steps-h" style={{ marginTop: 26 }}>
                 <div>
-                  <div className="muted" style={{ fontSize: 13 }}>{done ? 'Project complete' : `Stage ${current + 1} of ${labels.length}`}</div>
-                  <div className="h-section">{done ? 'All stages delivered' : labels[current]}</div>
-                  {!done && signed.has(current) && <div style={{ fontSize: 13, color: 'var(--ok)', marginTop: 2 }}>Signed off by the client</div>}
+                  <div className="muted" style={{ fontSize: 13 }}>
+                    {shown === current ? (done ? 'Project complete' : `Stage ${current + 1} of ${labels.length}, in progress`) : `Stage ${shown + 1} of ${labels.length}, ${shown < current || done ? 'done' : 'coming up'}`}
+                  </div>
+                  <h2 className="h-section">{labels[shown]}</h2>
                 </div>
                 <div className="tb-r">
-                  {!done && <button className="btn bg" type="button" onClick={() => setSendStage(current)}><Icon name="clipboard" />Send questionnaire</button>}
-                  {done ? (
-                    <button className="btn bg" type="button" disabled={busy} onClick={() => setStatus('active')}>Reopen project</button>
-                  ) : (
-                    <>
-                      <button className="btn bq" type="button" disabled={busy || current === 0} onClick={() => moveTo(current - 1)}>Back a stage</button>
-                      {!signed.has(current) && <button className="btn bg" type="button" disabled={busy} onClick={signOffCurrent}><Icon name="check" />Mark signed off</button>}
-                      {atLast
-                        ? <button className="btn bp" type="button" disabled={busy} onClick={() => setStatus('delivered')}>Mark project delivered</button>
-                        : <button className="btn bp" type="button" disabled={busy} onClick={() => moveTo(current + 1)}>Move to {labels[current + 1]}</button>}
-                    </>
-                  )}
+                  {shown !== current && <button className="btn bq bsm" type="button" onClick={() => setViewStage(null)}>Back to current stage</button>}
+                  <button className="btn bq bsm" type="button" onClick={() => setEditSteps(true)}><Icon name="edit" size={15} />Edit steps</button>
                 </div>
               </div>
+              <ProjectSteps project={project} stageIndex={shown} ctx={ctx} currency={currency} actions={stepActions} disabled={busy || shown > current} />
+              {shown === current && (
+                <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                  <div className="muted" style={{ fontSize: 13.5 }}>
+                    {done ? 'Every stage is delivered.' : currentComplete ? (atLast ? 'Every step is done. You can close the project.' : `Every step is done. Ready to move on to ${labels[current + 1]}.`) : 'Move on once every step above is done, or whenever you’re ready.'}
+                  </div>
+                  <div className="tb-r">
+                    {done ? (
+                      <button className="btn bg" type="button" disabled={busy} onClick={() => setStatus('active')}>Reopen project</button>
+                    ) : (
+                      <>
+                        <button className="btn bq" type="button" disabled={busy || current === 0} onClick={() => moveTo(current - 1)}>Back a stage</button>
+                        {atLast
+                          ? <button className={`btn ${currentComplete ? 'bp' : 'bg'}`} type="button" disabled={busy} onClick={() => setStatus('delivered')}>Mark project delivered</button>
+                          : <button className={`btn ${currentComplete ? 'bp' : 'bg'}`} type="button" disabled={busy} onClick={() => moveTo(current + 1)}>Move to {labels[current + 1]}</button>}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              {shown !== current && shownComplete && <div className="muted" style={{ fontSize: 13, marginTop: 12 }}>All steps in this stage are done.</div>}
             </section>
 
             <div className="split section">
               <section aria-labelledby="stages-h">
-                <div className="section-h"><h2 id="stages-h" className="h-section">Stages and deliverables</h2></div>
+                <div className="section-h"><h2 id="stages-h" className="h-section">All stages</h2></div>
                 <ol className="panel rows" style={{ listStyle: 'none' }}>
                   {labels.map((label, index) => {
                     const files = (project.files || []).filter((f) => Number(f.stage_index || 0) === index);
-                    const forms = projectForms.filter((r) => Number(r.stage_index || 0) === index);
+                    const forms = looseForms.filter((r) => Number(r.stage_index || 0) === index);
+                    const steps = stageSteps(project, index, ctx);
+                    const doneCount = steps.filter((x) => x.state === 'done').length;
                     const state = done || index < current ? 'done' : index === current ? 'now' : 'next';
                     return (
-                      <li key={label} className="row" style={{ cursor: 'default', alignItems: 'flex-start' }}>
+                      <li key={`${label}-${index}`} className="row" style={{ alignItems: 'flex-start', background: index === shown ? 'var(--paper)' : undefined }} onClick={() => setViewStage(index === current ? null : index)}>
                         <span className={`signal ${state === 'done' ? 'ok' : state === 'now' ? 'warn' : ''}`} style={state === 'next' ? { background: 'var(--line)' } : undefined} />
                         <span className="row-main">
-                          <span className="row-title" style={{ display: 'block', color: state === 'next' ? 'var(--text-2)' : undefined }}>
+                          <button type="button" className="row-title" style={{ display: 'block', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', color: state === 'next' ? 'var(--text-2)' : undefined }}>
                             {index + 1}. {label}
-                          </span>
+                          </button>
                           <span className="row-sub" style={{ display: 'block' }}>
                             {state === 'now' ? 'In progress' : state === 'done' ? 'Done' : 'Upcoming'}
-                            {signed.has(index) ? ', signed off' : ''}
+                            {steps.length ? `, ${doneCount} of ${steps.length} steps done` : ''}
                           </span>
+                          <span className="row-sub" style={{ display: 'block', color: 'var(--text-3)' }}>{steps.map((x) => x.step.label).join(' · ')}</span>
                           {forms.map((r) => {
                             const pr = progress(r.questions, r.answers);
                             const isNew = r.status === 'submitted' && !r.seen_by_studio;
                             return (
-                              <Link key={r.id} to={`/questionnaires/responses/${r.id}`} className="stage-form">
+                              <Link key={r.id} to={`/questionnaires/responses/${r.id}`} className="stage-form" onClick={(e) => e.stopPropagation()}>
                                 <Icon name="clipboard" size={16} />
                                 <span className="row-main">
                                   <span style={{ display: 'block', fontWeight: 500, color: 'var(--ink)' }}>{r.title}</span>
@@ -415,44 +450,57 @@ export default function Projects() {
                             </span>
                           )}
                         </span>
+                        <Icon name="forward" size={16} className="ico muted" />
                       </li>
                     );
                   })}
                 </ol>
               </section>
 
-              <aside className="panel" aria-label="Log a deliverable and notes">
-                <div className="aside-block">
-                  <h2 className="card-title" style={{ marginBottom: 4 }}>Log a deliverable</h2>
-                  <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>Adds it to {done ? 'the final stage' : labels[current]}.</p>
-                  <form onSubmit={handleAddFile}>
-                    <div className="fc">
-                      <label className="fc-label" htmlFor="file-name">Name</label>
-                      <input id="file-name" className="fi" value={fileForm.name} onChange={(e) => setFileForm({ ...fileForm, name: e.target.value })} placeholder="Brand presentation" required />
-                    </div>
-                    <div className="fc">
-                      <label className="fc-label" htmlFor="file-type">Type</label>
-                      <input id="file-type" className="fi" value={fileForm.file_type} onChange={(e) => setFileForm({ ...fileForm, file_type: e.target.value })} placeholder="PDF, Figma link, ZIP" />
-                    </div>
-                    <button className="btn bg bsm" type="submit" disabled={savingFile}><Icon name="plus" />{savingFile ? 'Adding…' : 'Add deliverable'}</button>
-                  </form>
-                </div>
+              <aside className="panel" aria-label="Notes and extras">
                 <div className="aside-block">
                   <h2 className="card-title" style={{ marginBottom: 6 }}>Notes</h2>
                   {project.budget
                     ? <p style={{ fontSize: 13.5, whiteSpace: 'pre-wrap' }}>{project.budget}</p>
                     : <p className="muted" style={{ fontSize: 13 }}>No notes yet. <button type="button" className="auth-link" onClick={openEdit}>Add notes</button> for scope or budget details.</p>}
                 </div>
+                <div className="aside-block">
+                  <h2 className="card-title" style={{ marginBottom: 4 }}>Something extra?</h2>
+                  <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>Send a one-off questionnaire, or add a step to any stage.</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button className="btn bg bsm" type="button" onClick={() => setSendDefaults({ client_id: project.client_id, project_id: project.id, stage_index: current })}><Icon name="clipboard" size={15} />Send questionnaire</button>
+                    <button className="btn bg bsm" type="button" onClick={() => setEditSteps(true)}><Icon name="plus" size={15} />Add a step</button>
+                  </div>
+                </div>
               </aside>
             </div>
           </div>
         </div>
 
-        <SendQuestionnaire
-          open={sendStage !== null}
-          onClose={() => setSendStage(null)}
-          defaults={{ client_id: project.client_id, project_id: project.id, stage_index: sendStage ?? current }}
+        <SendQuestionnaire open={sendDefaults !== null} onClose={() => setSendDefaults(null)} defaults={sendDefaults || {}} />
+        <ReviewComposer
+          open={Boolean(composer)}
+          onClose={() => setComposer(null)}
+          onSent={(sent) => navigate(`/reviews/${sent.id}`)}
+          project={project}
+          stageIndex={composer?.stageIndex ?? current}
+          step={composer?.step}
+          kind={composer?.kind}
+          round={composer?.round}
         />
+        <FinalInvoiceModal
+          open={Boolean(invoiceStep)}
+          onClose={() => setInvoiceStep(null)}
+          project={project}
+          step={invoiceStep}
+          invoices={invoices}
+          currency={currency}
+          onSaved={({ workflow, invoice, created }) => {
+            patchProject(project.id, { workflow });
+            if (created) setInvoices((prev) => [invoice, ...prev]);
+          }}
+        />
+        <EditStepsModal open={editSteps} onClose={() => setEditSteps(false)} project={project} onSaved={(workflow) => patchProject(project.id, { workflow })} />
         <Modal
           open={editOpen}
           onClose={() => setEditOpen(false)}
@@ -499,7 +547,7 @@ export default function Projects() {
             {visible.length ? (
               <div className="journeys">
                 {visible.map((p) => {
-                  const total = stageLabels(p.service).length;
+                  const total = stageLabels(p).length;
                   const done = isDone(p);
                   return (
                     <Link key={p.id} className="journey" to={`/projects/${p.id}`}>

@@ -12,12 +12,14 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
+  orderBy,
   query,
   setDoc,
   updateDoc,
   where,
 } from 'firebase/firestore';
 import { auth, createSecondaryFirebaseServices, db, ensureFirebaseConfigured } from '../lib/firebase';
+import { sanitizeWorkflow, workflowLabels } from './workflow';
 
 export const USER_ROLES = {
   STUDIO: 'studio',
@@ -594,6 +596,7 @@ export const projectsAPI = {
       timeline: body.timeline !== undefined ? text(body.timeline) : undefined,
       budget: body.budget !== undefined ? text(body.budget) : undefined,
       status: body.status !== undefined ? text(body.status) : undefined,
+      workflow: body.workflow !== undefined ? sanitizeWorkflow(body.workflow) : undefined,
     });
     await updateDoc(doc(db, 'projects', id), payload);
     return getAccessibleDoc('projects', id, session);
@@ -1120,7 +1123,7 @@ function sanitizeAnswers(answers, questions) {
 }
 
 // Lets the studio know by email when a client submits (best effort; Vela still shows it in-app).
-async function notifyStudioOfSubmission(responseId) {
+async function notifyStudioOfSubmission(responseId, kind = 'questionnaire') {
   try {
     const token = await auth?.currentUser?.getIdToken();
     if (!token) return;
@@ -1128,7 +1131,7 @@ async function notifyStudioOfSubmission(responseId) {
       method: 'POST',
       keepalive: true,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ responseId }),
+      body: JSON.stringify(kind === 'review' ? { reviewId: responseId } : { responseId }),
     });
   } catch {
     // Email is a convenience; the submission itself has already been saved.
@@ -1188,7 +1191,7 @@ export const questionnairesAPI = {
     return getAccessibleDoc('questionnaire_responses', id, session);
   },
 
-  async send({ template_id, client_id, project_id, stage_index, note }) {
+  async send({ template_id, client_id, project_id, stage_index, note, step_id }) {
     const session = await requireStudioSession();
     if (!template_id || !client_id) {
       throw new Error('Choose a questionnaire and a client.');
@@ -1212,6 +1215,8 @@ export const questionnairesAPI = {
       project_id: project?.id || '',
       project_service: project?.service || '',
       stage_index: Number.isFinite(Number(stage_index)) ? Number(stage_index) : 0,
+      stage_label: project ? (workflowLabels(project)[Number(stage_index) || 0] || '') : '',
+      step_id: text(step_id),
       template_id: template.id,
       title: template.title,
       description: text(note) || template.description || '',
@@ -1288,5 +1293,196 @@ export const questionnairesAPI = {
       cancelled = true;
       unsubscribe();
     };
+  },
+};
+
+/* ── Reviews: work the studio shares with a client for comments and approval ── */
+
+function sanitizeFiles(files) {
+  return (Array.isArray(files) ? files : [])
+    .map((f) => ({
+      name: text(f.name).slice(0, 200) || 'File',
+      url: text(f.url),
+      kind: f.kind === 'link' ? 'link' : 'file',
+      type: text(f.type).slice(0, 100),
+      size: Number(f.size) || 0,
+    }))
+    .filter((f) => /^https?:\/\//i.test(f.url));
+}
+
+export const reviewsAPI = {
+  async list() {
+    const rows = await listAccessibleDocs('reviews');
+    return rows.sort((a, b) => compareDatesDesc(a, b, 'sent_at'));
+  },
+
+  async get(id) {
+    const session = await requireSession();
+    return getAccessibleDoc('reviews', id, session);
+  },
+
+  // Studio shares files for a step. Each send is a new round, so earlier rounds stay on record.
+  async send({ project_id, stage_index, step_id, title, note, files, kind = 'review' }) {
+    const session = await requireStudioSession();
+    const project = await getAccessibleDoc('projects', project_id, session);
+    const client = await getStudioClient(project.client_id, session);
+    const cleanFiles = sanitizeFiles(files);
+    if (!cleanFiles.length) {
+      throw new Error('Add at least one file or link.');
+    }
+    const previous = await getDocs(query(collection(db, 'reviews'), where('user_id', '==', session.firebaseUser.uid), where('project_id', '==', project.id)));
+    const round = previous.docs.filter((d) => d.data().step_id === step_id).length + 1;
+    const stamp = now();
+    const payload = {
+      user_id: session.firebaseUser.uid,
+      studio_email: session.firebaseUser.email || '',
+      client_id: client.id,
+      client_name: client.name,
+      contact_name: client.contact || '',
+      project_id: project.id,
+      project_service: project.service || '',
+      stage_index: Number(stage_index) || 0,
+      stage_label: workflowLabels(project)[Number(stage_index) || 0] || '',
+      step_id: text(step_id),
+      title: text(title) || 'Work for review',
+      note: text(note),
+      files: cleanFiles,
+      kind: kind === 'delivery' ? 'delivery' : 'review',
+      status: kind === 'delivery' ? 'delivered' : 'in_review',
+      round,
+      sent_at: stamp,
+      updated_at: stamp,
+      decided_at: '',
+      decision_note: '',
+      client_activity_at: '',
+      studio_seen_at: stamp,
+    };
+    const reference = await addDoc(collection(db, 'reviews'), payload);
+    return { id: reference.id, ...payload };
+  },
+
+  // Client approves or asks for changes.
+  async decide(id, decision, note = '') {
+    const session = await requireClientSession();
+    const current = await getAccessibleDoc('reviews', id, session);
+    if (current.status !== 'in_review') {
+      throw new Error('This has already been answered.');
+    }
+    const status = decision === 'approved' ? 'approved' : 'changes_requested';
+    const stamp = now();
+    const payload = { status, decided_at: stamp, decision_note: text(note).slice(0, 5000), client_activity_at: stamp, updated_at: stamp };
+    await updateDoc(doc(db, 'reviews', id), payload);
+    if (payload.decision_note) {
+      await addDoc(collection(db, 'reviews', id, 'comments'), {
+        author_role: USER_ROLES.CLIENT,
+        author_name: session.profile.name || current.contact_name || current.client_name,
+        text: payload.decision_note,
+        decision: status,
+        created_at: stamp,
+      });
+    }
+    notifyStudioOfSubmission(id, 'review');
+    return { ...current, ...payload };
+  },
+
+  // Studio records an approval given elsewhere (e.g. on a call), or reopens a decision.
+  async setStatus(id, status) {
+    const session = await requireStudioSession();
+    await getAccessibleDoc('reviews', id, session);
+    const allowed = ['in_review', 'approved', 'changes_requested'];
+    if (!allowed.includes(status)) throw new Error('Unknown status.');
+    const payload = { status, decided_at: status === 'in_review' ? '' : now(), updated_at: now() };
+    await updateDoc(doc(db, 'reviews', id), payload);
+    return payload;
+  },
+
+  async markSeen(id) {
+    const session = await requireStudioSession();
+    await getAccessibleDoc('reviews', id, session);
+    await updateDoc(doc(db, 'reviews', id), { studio_seen_at: now() });
+  },
+
+  async remove(id) {
+    return deleteStudioDoc('reviews', id);
+  },
+
+  subscribeComments(id, onChange, onError = () => {}) {
+    return onSnapshot(
+      query(collection(db, 'reviews', id, 'comments'), orderBy('created_at', 'asc')),
+      (snapshot) => onChange(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
+      onError
+    );
+  },
+
+  async addComment(id, message) {
+    const session = await requireSession();
+    const current = await getAccessibleDoc('reviews', id, session);
+    const body = text(message).slice(0, 5000);
+    if (!body) throw new Error('Write a comment first.');
+    const stamp = now();
+    const studio = isStudioProfile(session.profile);
+    const comment = {
+      author_role: studio ? USER_ROLES.STUDIO : USER_ROLES.CLIENT,
+      author_name: studio ? (session.profile.name || 'Studio') : (session.profile.name || current.contact_name || current.client_name),
+      text: body,
+      created_at: stamp,
+    };
+    const reference = await addDoc(collection(db, 'reviews', id, 'comments'), comment);
+    if (studio) {
+      await updateDoc(doc(db, 'reviews', id), { studio_seen_at: stamp, updated_at: stamp });
+    } else {
+      await updateDoc(doc(db, 'reviews', id), { client_activity_at: stamp, updated_at: stamp });
+      notifyStudioOfSubmission(id, 'review');
+    }
+    return { id: reference.id, ...comment };
+  },
+
+  // Live updates for the studio (approvals, change requests and comments).
+  subscribe(onChange, onError = () => {}) {
+    let unsubscribe = () => {};
+    let cancelled = false;
+    requireStudioSession()
+      .then((session) => {
+        if (cancelled) return;
+        unsubscribe = onSnapshot(
+          query(collection(db, 'reviews'), where('user_id', '==', session.firebaseUser.uid)),
+          (snapshot) => onChange(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
+          onError
+        );
+      })
+      .catch(onError);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  },
+};
+
+/* ── File uploads (Vercel Blob) ── */
+
+export const uploadsAPI = {
+  async status() {
+    try {
+      const res = await fetch('/api/upload');
+      if (!res.ok) return { configured: false };
+      return await res.json();
+    } catch {
+      return { configured: false };
+    }
+  },
+
+  async upload(file, { folder = 'uploads', onProgress } = {}) {
+    await requireStudioSession();
+    const token = await auth.currentUser.getIdToken();
+    const { upload } = await import('@vercel/blob/client');
+    const safeName = String(file.name || 'file').replace(/[^A-Za-z0-9._-]+/g, '-').slice(-80);
+    const blob = await upload(`${folder}/${safeName}`, file, {
+      access: 'public',
+      handleUploadUrl: '/api/upload',
+      clientPayload: JSON.stringify({ token }),
+      multipart: file.size > 8 * 1024 * 1024,
+      onUploadProgress: onProgress ? (e) => onProgress(e.percentage) : undefined,
+    });
+    return { name: file.name, url: blob.url, type: file.type || blob.contentType || '', size: file.size, kind: 'file' };
   },
 };

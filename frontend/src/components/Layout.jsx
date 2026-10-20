@@ -28,8 +28,12 @@ export default function Layout() {
 
 function StudioShell() {
   const { user, logout } = useAuth();
-  const { unseen } = useQuestionnaireAlerts();
-  const nav = NAV.map((item) => (item.to === '/questionnaires' ? { ...item, badge: unseen.length } : item));
+  const { unseen, reviewUnseen } = useQuestionnaireAlerts();
+  const nav = NAV.map((item) => {
+    if (item.to === '/questionnaires') return { ...item, badge: unseen.length };
+    if (item.to === '/projects') return { ...item, badge: reviewUnseen.length };
+    return item;
+  });
   const navigate = useNavigate();
 
   async function handleLogout() {

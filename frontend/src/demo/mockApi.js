@@ -1,6 +1,7 @@
 // Demo-mode data layer: same exports as src/utils/api.js, backed by in-memory sample data.
 // Used only by `npm run demo` (vite.demo.config.js). Never touches Firebase.
-import { brandStrategyStarter } from '../utils/questionnaires';
+import { brandStrategyStarter, projectFeedbackStarter } from '../utils/questionnaires';
+import { sanitizeWorkflow } from '../utils/workflow';
 
 export const USER_ROLES = { STUDIO: 'studio', CLIENT: 'client' };
 export function normalizeRole(value) {
@@ -25,10 +26,10 @@ const db = {
     { id: 'c5', name: 'Kettle House', contact: 'James Ward', email: 'james@kettlehouse.co.uk', location: 'Bath', industry: 'Fashion & Lifestyle', color: '#3C3C3C' },
   ],
   projects: [
-    { id: 'pr1', client_id: 'c1', client_name: 'Maison Noor', client_color: '#7A4E3B', service: 'Brand Identity', value: '4800', stage: 3, start_date: day(-34), timeline: '8 weeks', status: 'active', files: [{ id: 'f1', name: 'Moodboard v2.pdf', stage_index: 1, file_type: 'pdf', uploaded_at: iso(day(-20)) }], signoffs: [0, 1, 2], created_at: iso(day(-34)) },
+    { id: 'pr1', client_id: 'c1', client_name: 'Maison Noor', client_color: '#7A4E3B', service: 'Brand Identity', value: '4800', stage: 1, start_date: day(-34), timeline: '8 weeks', status: 'active', files: [{ id: 'f1', name: 'Moodboard v2.pdf', stage_index: 1, file_type: 'pdf', uploaded_at: iso(day(-20)) }], signoffs: [0, 1, 2], created_at: iso(day(-34)) },
     { id: 'pr2', client_id: 'c3', client_name: 'Saha Retreats', client_color: '#B07A4A', service: 'Web Design', value: '6500', stage: 2, start_date: day(-18), timeline: '10 weeks', status: 'active', files: [], signoffs: [], created_at: iso(day(-18)) },
     { id: 'pr3', client_id: 'c4', client_name: 'Lumen Skin', client_color: '#2F4A6B', service: 'Packaging Design', value: '3900', stage: 1, start_date: day(-9), timeline: '6 weeks', status: 'active', files: [], signoffs: [], created_at: iso(day(-9)) },
-    { id: 'pr4', client_id: 'c2', client_name: 'Olive & Ash', client_color: '#5E6B4E', service: 'Brand Identity', value: '4200', stage: 5, start_date: day(-80), timeline: '8 weeks', status: 'delivered', files: [], signoffs: [], created_at: iso(day(-80)) },
+    { id: 'pr4', client_id: 'c2', client_name: 'Olive & Ash', client_color: '#5E6B4E', service: 'Brand Identity', value: '4200', stage: 2, start_date: day(-80), timeline: '8 weeks', status: 'delivered', files: [], signoffs: [], created_at: iso(day(-80)) },
   ],
   invoices: [
     { id: 'i1', client_id: 'c1', client_name: 'Maison Noor', project_id: 'pr1', description: 'Brand Identity — 50% deposit', amount: '2400', due_date: day(-30), status: 'paid', created_at: iso(day(-34)) },
@@ -79,11 +80,14 @@ const visible = (coll) => (scopeClientId
 
 const starter = brandStrategyStarter();
 const ans = (i) => starter.questions[i].id;
-db.questionnaires = [{ id: 'qt1', user_id: 'demo', ...starter, created_at: iso(day(-60)), updated_at: iso(day(-60)) }];
+db.questionnaires = [
+  { id: 'qt1', user_id: 'demo', ...starter, created_at: iso(day(-60)), updated_at: iso(day(-60)) },
+  { id: 'qt2', user_id: 'demo', ...projectFeedbackStarter(), created_at: iso(day(-60)), updated_at: iso(day(-60)) },
+];
 db.questionnaire_responses = [
   {
     id: 'qr1', user_id: 'demo', studio_email: 'studio@example.com', client_id: 'c1', client_name: 'Maison Noor', contact_name: 'Layla Haddad',
-    project_id: 'pr1', project_service: 'Brand Identity', stage_index: 0, template_id: 'qt1', title: starter.title, description: starter.description,
+    project_id: 'pr1', project_service: 'Brand Identity', stage_index: 0, stage_label: 'Strategy', step_id: 's0-brand-strategy-questionn', template_id: 'qt1', title: starter.title, description: starter.description,
     questions: starter.questions,
     answers: {
       [ans(1)]: 'Maison Noor is a Riyadh fragrance house making oud-based perfumes for a younger, design-led audience.',
@@ -110,7 +114,7 @@ db.questionnaire_responses = [
   },
   {
     id: 'qr3', user_id: 'demo', studio_email: 'studio@example.com', client_id: 'c1', client_name: 'Maison Noor', contact_name: 'Layla Haddad',
-    project_id: 'pr1', project_service: 'Brand Identity', stage_index: 3, template_id: 'qt1', title: 'First draft feedback',
+    project_id: 'pr1', project_service: 'Brand Identity', stage_index: 1, stage_label: 'Brand Identity Presentation', template_id: 'qt1', title: 'Logo direction check-in',
     description: 'A few quick questions so I can refine the first draft before our call.',
     questions: [
       { id: 'f1', type: 'textarea', label: 'What’s your first reaction to the logo direction?', help: '', options: '', required: true },
@@ -120,6 +124,24 @@ db.questionnaire_responses = [
     answers: {}, status: 'sent', seen_by_studio: false, sent_at: iso(day(-1)), updated_at: iso(day(-1)), submitted_at: '',
   },
 ];
+
+// Sample artwork for the demo, drawn as simple SVGs.
+const art = (label, bg, fg = '#F5F0E8') => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='800' height='560'><rect width='800' height='560' fill='${bg}'/><text x='400' y='290' font-family='Georgia' font-size='54' fill='${fg}' text-anchor='middle'>${label}</text></svg>`)}`;
+db.reviews = [
+  { id: 'rv1', user_id: 'demo', client_id: 'c1', client_name: 'Maison Noor', contact_name: 'Layla Haddad', project_id: 'pr1', project_service: 'Brand Identity', stage_index: 0, stage_label: 'Strategy', step_id: 's0-strategy-first-draft', title: 'Strategy first draft', note: 'Here is the first draft of your brand strategy: positioning, audience and tone of voice.', files: [{ name: 'Maison Noor brand strategy v1.pdf', url: 'https://example.com/strategy-v1.pdf', kind: 'file', type: 'application/pdf', size: 2400000 }], kind: 'review', status: 'changes_requested', round: 1, sent_at: iso(day(-24)), decided_at: iso(day(-22)), decision_note: 'Can we lean more into the heritage story?', client_activity_at: iso(day(-22)), studio_seen_at: iso(day(-21)), updated_at: iso(day(-22)) },
+  { id: 'rv2', user_id: 'demo', client_id: 'c1', client_name: 'Maison Noor', contact_name: 'Layla Haddad', project_id: 'pr1', project_service: 'Brand Identity', stage_index: 0, stage_label: 'Strategy', step_id: 's0-strategy-first-draft', title: 'Strategy first draft', note: 'Revised with the heritage story at the centre.', files: [{ name: 'Maison Noor brand strategy v2.pdf', url: 'https://example.com/strategy-v2.pdf', kind: 'file', type: 'application/pdf', size: 2600000 }], kind: 'review', status: 'approved', round: 2, sent_at: iso(day(-20)), decided_at: iso(day(-19)), decision_note: '', client_activity_at: iso(day(-19)), studio_seen_at: iso(day(-18)), updated_at: iso(day(-19)) },
+  { id: 'rv3', user_id: 'demo', client_id: 'c1', client_name: 'Maison Noor', contact_name: 'Layla Haddad', project_id: 'pr1', project_service: 'Brand Identity', stage_index: 1, stage_label: 'Brand Identity Presentation', step_id: 's1-creative-direction', title: 'Creative direction', note: 'Two routes: Desert Garden and Night Market.', files: [{ name: 'Route A, Desert Garden', url: art('Desert Garden', '#B07A4A'), kind: 'file', type: 'image/svg+xml', size: 200000 }, { name: 'Route B, Night Market', url: art('Night Market', '#1B2B4B'), kind: 'file', type: 'image/svg+xml', size: 200000 }, { name: 'Pinterest board', url: 'https://pinterest.com/example', kind: 'link', type: '', size: 0 }], kind: 'review', status: 'approved', round: 1, sent_at: iso(day(-12)), decided_at: iso(day(-10)), decision_note: 'Desert Garden all the way!', client_activity_at: iso(day(-10)), studio_seen_at: iso(day(-9)), updated_at: iso(day(-10)) },
+  { id: 'rv4', user_id: 'demo', client_id: 'c1', client_name: 'Maison Noor', contact_name: 'Layla Haddad', project_id: 'pr1', project_service: 'Brand Identity', stage_index: 1, stage_label: 'Brand Identity Presentation', step_id: 's1-logo-design', title: 'Logo design', note: 'Three logo concepts built on the Desert Garden direction. Let me know your favourite.', files: [{ name: 'Concept 1, Monogram', url: art('MN', '#7A4E3B'), kind: 'file', type: 'image/svg+xml', size: 150000 }, { name: 'Concept 2, Wordmark', url: art('Maison Noor', '#F5F0E8', '#7A4E3B'), kind: 'file', type: 'image/svg+xml', size: 150000 }, { name: 'Concept 3, Seal', url: art('✦ Noor ✦', '#5E6B4E'), kind: 'file', type: 'image/svg+xml', size: 150000 }], kind: 'review', status: 'in_review', round: 1, sent_at: iso(day(-2)), decided_at: '', decision_note: '', client_activity_at: new Date(Date.now() - 1000 * 60 * 25).toISOString(), studio_seen_at: iso(day(-2)), updated_at: iso(day(0)) },
+];
+db.comments = {
+  rv1: [{ id: 'cm0', author_role: 'client', author_name: 'Layla Haddad', text: 'Can we lean more into the heritage story?', decision: 'changes_requested', created_at: iso(day(-22)) }],
+  rv3: [{ id: 'cm1', author_role: 'client', author_name: 'Layla Haddad', text: 'Desert Garden all the way!', decision: 'approved', created_at: iso(day(-10)) }],
+  rv4: [
+    { id: 'cm2', author_role: 'client', author_name: 'Layla Haddad', text: 'Loving concept 1. Could the monogram feel a little softer?', created_at: iso(day(-1)) },
+    { id: 'cm3', author_role: 'studio', author_name: 'Mayaa', text: 'Absolutely, I’ll round the terminals and share a tweak.', created_at: iso(day(-1)) },
+    { id: 'cm4', author_role: 'client', author_name: 'Layla Haddad', text: 'Perfect, thank you!', created_at: new Date(Date.now() - 1000 * 60 * 25).toISOString() },
+  ],
+};
 
 const listeners = new Set();
 function emitResponses() { listeners.forEach((fn) => fn(JSON.parse(JSON.stringify(db.questionnaire_responses)))); }
@@ -138,7 +160,7 @@ function crud(coll) {
     },
     async update(rid, body) {
       const row = byId(coll, rid);
-      Object.assign(row, body);
+      Object.assign(row, body.workflow ? { ...body, workflow: sanitizeWorkflow(body.workflow) } : body);
       return delay(row);
     },
     async remove(rid) {
@@ -280,14 +302,14 @@ export const questionnairesAPI = {
   async removeTemplate(rid) { db.questionnaires = db.questionnaires.filter((r) => r.id !== rid); return delay({ success: true }); },
   async listResponses() { return delay(visible('questionnaire_responses')); },
   async getResponse(rid) { return delay(visible('questionnaire_responses').find((r) => r.id === rid)); },
-  async send({ template_id, client_id, project_id, stage_index, note }) {
+  async send({ template_id, client_id, project_id, stage_index, note, step_id }) {
     const t = byId('questionnaires', template_id);
     const c = byId('clients', client_id);
     const p = project_id ? byId('projects', project_id) : null;
     if (!t || !c) throw new Error('Choose a questionnaire and a client.');
     const row = {
       id: id(), user_id: 'demo', studio_email: 'studio@example.com', client_id: c.id, client_name: c.name, contact_name: c.contact || '',
-      project_id: p?.id || '', project_service: p?.service || '', stage_index: Number(stage_index) || 0, template_id: t.id,
+      project_id: p?.id || '', project_service: p?.service || '', stage_index: Number(stage_index) || 0, step_id: step_id || '', template_id: t.id,
       title: t.title, description: note || t.description || '', questions: t.questions, answers: {}, status: 'sent', seen_by_studio: false,
       sent_at: new Date().toISOString(), updated_at: new Date().toISOString(), submitted_at: '',
     };
@@ -327,5 +349,79 @@ export const questionnairesAPI = {
       }, 2500);
     }
     return () => listeners.delete(onChange);
+  },
+};
+
+const reviewListeners = new Set();
+const commentListeners = new Map();
+function emitReviews() { reviewListeners.forEach((fn) => fn(JSON.parse(JSON.stringify(db.reviews)))); }
+function emitComments(rid) { (commentListeners.get(rid) || new Set()).forEach((fn) => fn(JSON.parse(JSON.stringify(db.comments[rid] || [])))); }
+
+export const reviewsAPI = {
+  async list() { return delay(visible('reviews')); },
+  async get(rid) { return delay(visible('reviews').find((r) => r.id === rid)); },
+  async send({ project_id, stage_index, step_id, title, note, files, kind = 'review' }) {
+    const p = byId('projects', project_id);
+    const c = byId('clients', p.client_id);
+    if (!files?.length) throw new Error('Add at least one file or link.');
+    const stamp = new Date().toISOString();
+    const row = {
+      id: id(), user_id: 'demo', client_id: c.id, client_name: c.name, contact_name: c.contact || '', project_id: p.id, project_service: p.service,
+      stage_index: Number(stage_index) || 0, step_id, title, note: note || '', files, kind, status: kind === 'delivery' ? 'delivered' : 'in_review',
+      round: db.reviews.filter((r) => r.project_id === p.id && r.step_id === step_id).length + 1,
+      sent_at: stamp, updated_at: stamp, decided_at: '', decision_note: '', client_activity_at: '', studio_seen_at: stamp,
+    };
+    db.reviews.unshift(row);
+    emitReviews();
+    return delay(row);
+  },
+  async decide(rid, decision, note = '') {
+    const row = byId('reviews', rid);
+    const stamp = new Date().toISOString();
+    Object.assign(row, { status: decision === 'approved' ? 'approved' : 'changes_requested', decided_at: stamp, decision_note: note, client_activity_at: stamp, updated_at: stamp });
+    if (note) { db.comments[rid] = [...(db.comments[rid] || []), { id: id(), author_role: 'client', author_name: 'Layla Haddad', text: note, decision: row.status, created_at: stamp }]; emitComments(rid); }
+    emitReviews();
+    return delay(row);
+  },
+  async setStatus(rid, status) { const row = byId('reviews', rid); Object.assign(row, { status, decided_at: status === 'in_review' ? '' : new Date().toISOString() }); emitReviews(); return delay(row); },
+  async markSeen(rid) { const row = byId('reviews', rid); if (row) { row.studio_seen_at = new Date().toISOString(); emitReviews(); } return delay({}); },
+  async remove(rid) { db.reviews = db.reviews.filter((r) => r.id !== rid); emitReviews(); return delay({ success: true }); },
+  subscribeComments(rid, onChange) {
+    if (!commentListeners.has(rid)) commentListeners.set(rid, new Set());
+    commentListeners.get(rid).add(onChange);
+    setTimeout(() => onChange(JSON.parse(JSON.stringify(db.comments[rid] || []))), 30);
+    return () => commentListeners.get(rid).delete(onChange);
+  },
+  async addComment(rid, message) {
+    const stamp = new Date().toISOString();
+    const studio = !scopeClientId;
+    const comment = { id: id(), author_role: studio ? 'studio' : 'client', author_name: studio ? 'Mayaa' : 'Layla Haddad', text: message, created_at: stamp };
+    db.comments[rid] = [...(db.comments[rid] || []), comment];
+    const row = byId('reviews', rid);
+    if (studio) row.studio_seen_at = stamp; else row.client_activity_at = stamp;
+    emitComments(rid);
+    emitReviews();
+    return delay(comment);
+  },
+  subscribe(onChange) {
+    reviewListeners.add(onChange);
+    setTimeout(() => onChange(JSON.parse(JSON.stringify(db.reviews))), 50);
+    if (typeof window !== 'undefined' && /[?&]demoApprove=1/.test(window.location.search)) {
+      setTimeout(() => {
+        const row = db.reviews.find((r) => r.id === 'rv4');
+        const stamp = new Date().toISOString();
+        Object.assign(row, { status: 'approved', decided_at: stamp, client_activity_at: stamp });
+        emitReviews();
+      }, 2500);
+    }
+    return () => reviewListeners.delete(onChange);
+  },
+};
+
+export const uploadsAPI = {
+  async status() { return { configured: true }; },
+  async upload(file, { onProgress } = {}) {
+    for (const pct of [30, 70, 100]) { await new Promise((r) => setTimeout(r, 60)); onProgress?.(pct); }
+    return { name: file.name, url: URL.createObjectURL(file), type: file.type, size: file.size, kind: 'file' };
   },
 };

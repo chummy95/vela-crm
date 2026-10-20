@@ -6,6 +6,8 @@ import PortalLayout from './components/PortalLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
+import Review from './pages/Review';
+import PortalReview from './pages/PortalReview';
 import Clients from './pages/Clients';
 import Questionnaires from './pages/Questionnaires';
 import PortalQuestionnaires from './pages/PortalQuestionnaires';
@@ -69,6 +71,7 @@ export default function App() {
         <Route path="/" element={<Protected allowedRole="studio"><Layout /></Protected>}>
           <Route index element={<Dashboard />} />
           <Route path="projects/*" element={<Projects />} />
+          <Route path="reviews/:id" element={<Review />} />
           <Route path="clients" element={<Clients />} />
           <Route path="clients/:clientId" element={<ClientProfile />} />
           <Route path="invoices/*" element={<Invoices />} />
@@ -83,6 +86,7 @@ export default function App() {
         <Route path="/portal" element={<Protected allowedRole="client"><PortalLayout /></Protected>}>
           <Route index element={<PortalDashboard />} />
           <Route path="projects/*" element={<PortalProjects />} />
+          <Route path="reviews/:id" element={<PortalReview />} />
           <Route path="invoices/*" element={<PortalInvoices />} />
           <Route path="proposals/*" element={<PortalProposals />} />
           <Route path="contracts/*" element={<PortalContracts />} />

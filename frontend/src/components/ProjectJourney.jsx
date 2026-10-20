@@ -3,7 +3,7 @@ import { stageLabels } from '../utils/format';
 
 // The stage path of a project: finished stages filled, current stage ringed in brass.
 export function JourneyRail({ project, compact = false }) {
-  const labels = stageLabels(project?.service);
+  const labels = stageLabels(project || {});
   const delivered = project?.status === 'delivered' || project?.status === 'completed';
   const current = delivered ? labels.length : Math.min(Number(project?.stage || 0), labels.length - 1);
 

@@ -79,6 +79,17 @@ service cloud.firestore {
         && request.resource.data.answers is map;
     }
 
+    // A client may comment on work shared with them (which updates its activity time),
+    // and may approve it or ask for changes while it is waiting for their decision.
+    function clientCanUpdateReview() {
+      return clientCanReadRecord() && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['client_activity_at', 'updated_at'])
+        || (resource.data.status == 'in_review'
+          && request.resource.data.status in ['approved', 'changes_requested']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decided_at', 'decision_note', 'client_activity_at', 'updated_at']))
+      );
+    }
+
     function publicFormTargetExists() {
       return request.resource.data.user_id is string
         && request.resource.data.user_id.size() > 0
@@ -152,6 +163,38 @@ service cloud.firestore {
       allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
       allow update: if (studioOwnsExistingRecord() && studioKeepsOwnership()) || clientCanAnswer();
       allow delete: if studioOwnsExistingRecord();
+    }
+
+    match /reviews/{reviewId} {
+      allow create: if studioOwnsIncomingRecord();
+      allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
+      allow update: if (studioOwnsExistingRecord() && studioKeepsOwnership()) || clientCanUpdateReview();
+      allow delete: if studioOwnsExistingRecord();
+
+      match /comments/{commentId} {
+        function parentReview() {
+          return get(/databases/$(database)/documents/reviews/$(reviewId)).data;
+        }
+        function studioOwnsReview() {
+          return isStudio() && parentReview().user_id == request.auth.uid;
+        }
+        function clientOwnsReview() {
+          return isClient()
+            && parentReview().client_id == currentUserData().client_id
+            && parentReview().user_id == currentUserData().studio_owner_id;
+        }
+        function validComment(role) {
+          return request.resource.data.author_role == role
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 5000
+            && request.resource.data.keys().hasOnly(['author_role', 'author_name', 'text', 'created_at', 'decision']);
+        }
+        allow get, list: if studioOwnsReview() || clientOwnsReview();
+        allow create: if (studioOwnsReview() && validComment('studio')) || (clientOwnsReview() && validComment('client'));
+        allow update: if false;
+        allow delete: if studioOwnsReview();
+      }
     }
 
     match /form_configs/{userId} {
