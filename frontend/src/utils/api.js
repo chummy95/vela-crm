@@ -1306,6 +1306,7 @@ function sanitizeFiles(files) {
       kind: f.kind === 'link' ? 'link' : 'file',
       type: text(f.type).slice(0, 100),
       size: Number(f.size) || 0,
+      ...(f.pathname ? { pathname: text(f.pathname).slice(0, 400) } : {}),
     }))
     .filter((f) => /^https?:\/\//i.test(f.url));
 }
@@ -1471,18 +1472,41 @@ export const uploadsAPI = {
     }
   },
 
+  // Files go to a private store under the studio's own folder; they're opened through
+  // short-lived links from filesAPI.links.
   async upload(file, { folder = 'uploads', onProgress } = {}) {
-    await requireStudioSession();
+    const session = await requireStudioSession();
     const token = await auth.currentUser.getIdToken();
-    const { upload } = await import('@vercel/blob/client');
-    const safeName = String(file.name || 'file').replace(/[^A-Za-z0-9._-]+/g, '-').slice(-80);
-    const blob = await upload(`${folder}/${safeName}`, file, {
-      access: 'public',
+    const { uploadPresigned } = await import('@vercel/blob/client');
+    const safeName = String(file.name || 'file').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+/, '').slice(-80) || 'file';
+    const cleanFolder = String(folder).replace(/[^A-Za-z0-9_\-/]+/g, '-');
+    const unique = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const pathname = `studio/${session.firebaseUser.uid}/${cleanFolder}/${unique}-${safeName}`;
+    const blob = await uploadPresigned(pathname, file, {
+      access: 'private',
       handleUploadUrl: '/api/upload',
       clientPayload: JSON.stringify({ token }),
-      multipart: file.size > 8 * 1024 * 1024,
+      multipart: file.size > 20 * 1024 * 1024,
       onUploadProgress: onProgress ? (e) => onProgress(e.percentage) : undefined,
     });
-    return { name: file.name, url: blob.url, type: file.type || blob.contentType || '', size: file.size, kind: 'file' };
+    return { name: file.name, url: blob.url, pathname: blob.pathname || pathname, type: file.type || blob.contentType || '', size: file.size, kind: 'file' };
+  },
+};
+
+export const filesAPI = {
+  // Short-lived links (one hour) for the private files on a review.
+  async links(reviewId, urls) {
+    const wanted = (urls || []).filter(Boolean);
+    if (!reviewId || !wanted.length) return {};
+    await requireSession();
+    const token = await auth.currentUser.getIdToken();
+    const res = await fetch('/api/file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ reviewId, urls: wanted }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Couldn’t open these files.');
+    return data.links || {};
   },
 };

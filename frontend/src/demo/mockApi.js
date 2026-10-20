@@ -425,3 +425,7 @@ export const uploadsAPI = {
     return { name: file.name, url: URL.createObjectURL(file), type: file.type, size: file.size, kind: 'file' };
   },
 };
+
+export const filesAPI = {
+  async links(reviewId, urls) { return delay(Object.fromEntries((urls || []).map((u) => [u, u]))); },
+};

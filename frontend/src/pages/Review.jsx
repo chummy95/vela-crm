@@ -135,7 +135,7 @@ export default function Review() {
               {review.note && <div className="review-note">{review.note}</div>}
               <div className="panel" style={{ padding: 18 }}>
                 <h2 className="card-title" style={{ marginBottom: 12 }}>{delivery ? 'Final files' : 'Files'}</h2>
-                <FileList files={review.files || []} />
+                <FileList files={review.files || []} reviewId={review.id} />
               </div>
               {rounds.length > 1 && (
                 <div className="panel" style={{ padding: 18, marginTop: 18 }}>
