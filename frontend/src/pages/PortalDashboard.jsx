@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { JourneyRail } from '../components/ProjectJourney';
 import { useAuth } from '../hooks/useAuth';
-import { clientsAPI, contractsAPI, eventsAPI, invoicesAPI, messagesAPI, projectsAPI, proposalsAPI, questionnairesAPI } from '../utils/api';
+import { clientsAPI, contractsAPI, eventsAPI, invoicesAPI, messagesAPI, projectsAPI, proposalsAPI, questionnairesAPI, reviewsAPI } from '../utils/api';
 import { progress } from '../utils/questionnaires';
 import { daysFromToday, formatDate, formatMoney, greeting, isOverdue, relativeDay, stageLabel, stageLabels } from '../utils/format';
 
 export default function PortalDashboard() {
   const { user } = useAuth();
-  const [data, setData] = useState({ client: null, projects: [], invoices: [], proposals: [], contracts: [], events: [], messages: [], forms: [] });
+  const [data, setData] = useState({ client: null, projects: [], invoices: [], proposals: [], contracts: [], events: [], messages: [], forms: [], reviews: [] });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
 
@@ -18,19 +18,30 @@ export default function PortalDashboard() {
       clientsAPI.list(), projectsAPI.list(), invoicesAPI.list(), proposalsAPI.list(), contractsAPI.list(), eventsAPI.list(),
       messagesAPI.thread(user?.client_id).catch(() => []),
       questionnairesAPI.listResponses().catch(() => []),
+      reviewsAPI.list().catch(() => []),
     ])
-      .then(([clients, projects, invoices, proposals, contracts, events, messages, forms]) => {
-        setData({ client: clients[0] || null, projects, invoices, proposals, contracts, events, messages, forms });
+      .then(([clients, projects, invoices, proposals, contracts, events, messages, forms, reviews]) => {
+        setData({ client: clients[0] || null, projects, invoices, proposals, contracts, events, messages, forms, reviews });
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoaded(true));
   }, [user?.client_id]);
 
-  const { client, projects, invoices, proposals, contracts, events, messages, forms } = data;
+  const { client, projects, invoices, proposals, contracts, events, messages, forms, reviews } = data;
   const firstName = String(user?.name || '').split(' ')[0];
 
   const todo = useMemo(() => {
     const items = [];
+    const latest = new Map();
+    reviews.forEach((r) => {
+      const key = `${r.project_id}:${r.step_id}`;
+      if (!latest.has(key) || Number(r.round) > Number(latest.get(key).round)) latest.set(key, r);
+    });
+    [...latest.values()].filter((r) => r.status === 'in_review').forEach((r) => items.push({
+      key: `rv-${r.id}`, level: 'warn',
+      title: `Review the ${r.title.charAt(0).toLowerCase()}${r.title.slice(1)}${r.round > 1 ? ` (version ${r.round})` : ''}`,
+      sub: `Shared ${relativeDay(r.sent_at)}. Approve it or ask for changes`, to: `/portal/reviews/${r.id}`,
+    }));
     forms.filter((f) => f.status !== 'submitted').forEach((f) => {
       const p = progress(f.questions, f.answers);
       items.push({
@@ -52,7 +63,7 @@ export default function PortalDashboard() {
       sub: `${i.description || 'Invoice'}${i.due_date ? `, due ${relativeDay(i.due_date)}` : ''}`, to: `/portal/invoices/${i.id}`,
     }));
     return items;
-  }, [proposals, contracts, invoices, forms]);
+  }, [proposals, contracts, invoices, forms, reviews]);
 
   const upcoming = events.filter((e) => (daysFromToday(e.date) ?? -1) >= 0).sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)).slice(0, 3);
   const lastMessage = messages[messages.length - 1];
@@ -77,7 +88,7 @@ export default function PortalDashboard() {
             {projects.length ? (
               <div className="journeys">
                 {projects.map((p) => {
-                  const total = stageLabels(p.service).length;
+                  const total = stageLabels(p).length;
                   const done = p.status === 'delivered' || p.status === 'completed';
                   return (
                     <Link key={p.id} className="journey tight" to={`/portal/projects/${p.id}`}>

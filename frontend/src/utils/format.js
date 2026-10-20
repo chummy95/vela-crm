@@ -1,4 +1,4 @@
-import { STAGES } from './constants';
+import { workflowLabels } from './workflow';
 
 export function parseAmount(value) {
   const numeric = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
@@ -55,15 +55,14 @@ export function isOverdue(invoice) {
   return diff !== null && diff < 0;
 }
 
-export function stageLabels(service) {
-  const normalized = String(service || '').toLowerCase();
-  if (normalized.includes('pack')) return STAGES.packaging;
-  if (normalized.includes('web')) return STAGES.web;
-  return STAGES.brand;
+// Accepts a project (uses its own workflow) or a service name.
+export function stageLabels(projectOrService) {
+  if (projectOrService && typeof projectOrService === 'object') return workflowLabels(projectOrService);
+  return workflowLabels({ service: projectOrService });
 }
 
 export function stageLabel(project) {
-  const labels = stageLabels(project?.service);
+  const labels = stageLabels(project);
   const index = Math.min(Number(project?.stage || 0), labels.length - 1);
   return labels[index] || `Stage ${index + 1}`;
 }

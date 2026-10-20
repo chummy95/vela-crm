@@ -9,7 +9,7 @@ export default function SendQuestionnaire({ open, onClose, onSent, defaults = {}
   const [templates, setTemplates] = useState([]);
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [form, setForm] = useState({ template_id: '', client_id: '', project_id: '', stage_index: 0, note: '' });
+  const [form, setForm] = useState({ template_id: '', client_id: '', project_id: '', stage_index: 0, step_id: '', note: '' });
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -28,6 +28,7 @@ export default function SendQuestionnaire({ open, onClose, onSent, defaults = {}
           client_id: defaults.client_id || project?.client_id || c[0]?.id || '',
           project_id: defaults.project_id || '',
           stage_index: defaults.stage_index ?? Number(project?.stage || 0),
+          step_id: defaults.step_id || '',
           note: '',
         });
       })
@@ -37,7 +38,7 @@ export default function SendQuestionnaire({ open, onClose, onSent, defaults = {}
 
   const clientProjects = useMemo(() => projects.filter((p) => p.client_id === form.client_id), [projects, form.client_id]);
   const project = projects.find((p) => p.id === form.project_id);
-  const labels = project ? stageLabels(project.service) : [];
+  const labels = project ? stageLabels(project) : [];
   const client = clients.find((c) => c.id === form.client_id);
 
   async function handleSend(event) {
@@ -85,7 +86,7 @@ export default function SendQuestionnaire({ open, onClose, onSent, defaults = {}
           <div className="fi-row">
             <div className="fc">
               <label className="fc-label" htmlFor="sq-client">Client</label>
-              <select id="sq-client" className="fi fsel" value={form.client_id} onChange={(e) => setForm((f) => ({ ...f, client_id: e.target.value, project_id: '', stage_index: 0 }))} required>
+              <select id="sq-client" className="fi fsel" value={form.client_id} onChange={(e) => setForm((f) => ({ ...f, client_id: e.target.value, project_id: '', stage_index: 0, step_id: '' }))} required>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
@@ -97,7 +98,7 @@ export default function SendQuestionnaire({ open, onClose, onSent, defaults = {}
                 value={form.project_id}
                 onChange={(e) => {
                   const p = projects.find((x) => x.id === e.target.value);
-                  setForm((f) => ({ ...f, project_id: e.target.value, stage_index: Number(p?.stage || 0) }));
+                  setForm((f) => ({ ...f, project_id: e.target.value, stage_index: Number(p?.stage || 0), step_id: '' }));
                 }}
               >
                 <option value="">Not linked to a project</option>
@@ -108,7 +109,7 @@ export default function SendQuestionnaire({ open, onClose, onSent, defaults = {}
           {project && (
             <div className="fc">
               <label className="fc-label" htmlFor="sq-stage">Stage</label>
-              <select id="sq-stage" className="fi fsel" value={form.stage_index} onChange={(e) => setForm((f) => ({ ...f, stage_index: Number(e.target.value) }))}>
+              <select id="sq-stage" className="fi fsel" value={form.stage_index} onChange={(e) => setForm((f) => ({ ...f, stage_index: Number(e.target.value), step_id: '' }))}>
                 {labels.map((label, index) => <option key={label} value={index}>{index + 1}. {label}</option>)}
               </select>
             </div>

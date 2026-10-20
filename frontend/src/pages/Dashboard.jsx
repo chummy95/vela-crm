@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { useQuestionnaireAlerts } from '../hooks/useQuestionnaireAlerts';
+import { reviewActivityText, useQuestionnaireAlerts } from '../hooks/useQuestionnaireAlerts';
 import { contractsAPI, formsAPI, invoicesAPI, projectsAPI, proposalsAPI, eventsAPI } from '../utils/api';
 import { JourneyRail } from '../components/ProjectJourney';
 import ClientMark from '../components/ClientMark';
@@ -34,7 +34,7 @@ export default function Dashboard() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
-  const { unseen } = useQuestionnaireAlerts();
+  const { unseen, reviewUnseen } = useQuestionnaireAlerts();
 
   useEffect(() => {
     Promise.all([projectsAPI.list(), invoicesAPI.list(), proposalsAPI.list(), contractsAPI.list(), eventsAPI.list(), formsAPI.submissions()])
@@ -63,6 +63,12 @@ export default function Dashboard() {
 
   const attention = useMemo(() => {
     const items = [];
+    reviewUnseen.forEach((r) => items.push({
+      key: `rv-${r.id}`, level: r.status === 'changes_requested' ? 'warn' : 'ok', rank: -1,
+      title: reviewActivityText(r).replace(/^./, (c) => c.toUpperCase()),
+      sub: `${r.client_name}${r.stage_label ? `, ${r.stage_label}` : ''}, ${relativeDay(r.client_activity_at)}`,
+      to: `/reviews/${r.id}`,
+    }));
     unseen.forEach((r) => items.push({
       key: `qr-${r.id}`, level: 'ok', rank: -1,
       title: `${r.contact_name || r.client_name} filled in their questionnaire`,
@@ -108,7 +114,7 @@ export default function Dashboard() {
       to: '/forms',
     }));
     return items.sort((a, b) => a.rank - b.rank);
-  }, [invoices, contracts, proposals, submissions, currency, unseen]);
+  }, [invoices, contracts, proposals, submissions, currency, unseen, reviewUnseen]);
 
   const week = useMemo(() => {
     const upcoming = events
@@ -255,7 +261,7 @@ export default function Dashboard() {
             {activeProjects.length ? (
               <div className="journeys">
                 {activeProjects.map((p) => {
-                  const total = stageLabels(p.service).length;
+                  const total = stageLabels(p).length;
                   return (
                     <Link key={p.id} className="journey" to={`/projects/${p.id}`}>
                       <span className="journey-who">

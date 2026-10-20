@@ -242,7 +242,7 @@ export default function ClientProfile() {
                       {projects.length ? (
                         <div className="journeys">
                           {[...activeProjects, ...pastProjects].map((p) => {
-                            const total = stageLabels(p.service).length;
+                            const total = stageLabels(p).length;
                             const done = p.status !== 'active';
                             return (
                               <Link key={p.id} className="journey tight" to={`/projects/${p.id}`}>

@@ -10,12 +10,13 @@ import { desktopAlertsState, enableDesktopAlerts, useQuestionnaireAlerts } from 
 import { clientsAPI, questionnairesAPI } from '../utils/api';
 import { formatDate, relativeDay, stageLabels } from '../utils/format';
 import {
-  QUESTION_TYPES, RESPONSE_STATUS, answerableQuestions, blankQuestion, brandStrategyStarter, hasAnswer, progress, questionsFromText,
+  QUESTION_TYPES, RESPONSE_STATUS, answerableQuestions, blankQuestion, brandStrategyStarter, projectFeedbackStarter, hasAnswer, progress, questionsFromText,
 } from '../utils/questionnaires';
 
 const longDate = { day: 'numeric', month: 'long', year: 'numeric' };
 
 function stageName(r) {
+  if (r.stage_label) return r.stage_label;
   if (!r.project_service) return '';
   const labels = stageLabels(r.project_service);
   return labels[Number(r.stage_index || 0)] || '';
@@ -392,7 +393,7 @@ function QuestionnaireList() {
     setCreating(true);
     setError('');
     try {
-      const body = kind === 'starter' ? brandStrategyStarter() : { title: 'Untitled questionnaire', description: '', questions: [blankQuestion('textarea')] };
+      const body = kind === 'starter' ? brandStrategyStarter() : kind === 'feedback' ? projectFeedbackStarter() : { title: 'Untitled questionnaire', description: '', questions: [blankQuestion('textarea')] };
       if (kind === 'blank') body.questions[0].label = 'Your first question';
       const created = await questionnairesAPI.createTemplate(body);
       navigate(`/questionnaires/templates/${created.id}`);
@@ -404,6 +405,7 @@ function QuestionnaireList() {
 
   const colorFor = (clientId) => clients.find((c) => c.id === clientId)?.color;
   const hasStarter = templates.some((t) => t.title === brandStrategyStarter().title);
+  const hasFeedback = templates.some((t) => t.title === projectFeedbackStarter().title);
 
   return (
     <>
@@ -498,6 +500,7 @@ function QuestionnaireList() {
               </div>
               <div className="tb-r" style={{ marginTop: 14 }}>
                 {!hasStarter && <button className="btn bg" type="button" disabled={creating} onClick={() => create('starter')}><Icon name="plus" />Brand strategy questionnaire</button>}
+                {!hasFeedback && <button className="btn bg" type="button" disabled={creating} onClick={() => create('feedback')}><Icon name="plus" />Project feedback questionnaire</button>}
                 <button className="btn bg" type="button" disabled={creating} onClick={() => create('blank')}><Icon name="plus" />New questionnaire</button>
               </div>
             </>

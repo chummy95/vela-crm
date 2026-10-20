@@ -95,6 +95,36 @@ export function brandStrategyStarter() {
   };
 }
 
+export function projectFeedbackStarter() {
+  return {
+    title: 'Project feedback',
+    description: 'Thank you for trusting me with your brand. I’d love your honest thoughts on how the project went. Good and bad, it all helps me do better work. It takes about five minutes.',
+    questions: [
+      q('section', 'The result'),
+      q('choice', 'How do you feel about your new brand overall?', { required: true, options: 'Delighted, Happy, It’s okay, Disappointed' }),
+      q('textarea', 'What do you love most about it?'),
+      q('textarea', 'Is there anything you’re unsure about, or would change?'),
+
+      q('section', 'Working together'),
+      q('choice', 'How clear was the process from start to finish?', { options: 'Very clear, Mostly clear, Sometimes confusing, Confusing' }),
+      q('choice', 'How did you find communication and response times?', { options: 'Excellent, Good, Could be better, Poor' }),
+      q('choice', 'Did the project stay on time and on budget?', { options: 'Yes, Mostly, No' }),
+      q('textarea', 'Was there a moment where you felt especially looked after, or let down?'),
+      q('textarea', 'If you could change one thing about how we worked together, what would it be?', { required: true }),
+
+      q('section', 'Looking ahead'),
+      q('choice', 'How likely are you to recommend the studio to a friend?', { options: '10 (extremely likely), 9, 8, 7, 6, 5 or lower' }),
+      q('textarea', 'Would you be happy for a few words of your feedback to be shared as a testimonial? If so, write them here.', { help: 'Totally optional. I’ll always check with you before using it.' }),
+      q('textarea', 'Anything else you’d like to say?'),
+    ],
+  };
+}
+
+export const STARTERS = {
+  brand_strategy: brandStrategyStarter,
+  project_feedback: projectFeedbackStarter,
+};
+
 export const RESPONSE_STATUS = {
   sent: { label: 'Not started', pill: 'pending' },
   in_progress: { label: 'In progress', pill: 'active' },

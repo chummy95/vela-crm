@@ -1,4 +1,5 @@
-// Emails the studio when a client submits a questionnaire.
+// Emails the studio when a client submits a questionnaire, approves or asks for changes
+// to shared work, or leaves a comment on it.
 //
 // Called by the client portal right after a submission, with the client's Firebase sign-in token.
 // It reads the questionnaire back from Firestore *as that client*, so the security rules decide
@@ -29,41 +30,70 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const responseId = String(req.body?.responseId || '').trim();
+  const isReview = Boolean(req.body?.reviewId);
+  const recordId = String((isReview ? req.body?.reviewId : req.body?.responseId) || '').trim();
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(responseId) || !token) {
-    return res.status(400).json({ error: 'Missing questionnaire or sign-in.' });
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(recordId) || !token) {
+    return res.status(400).json({ error: 'Missing record or sign-in.' });
   }
   if (!configured) {
     return res.status(200).json({ sent: false, reason: 'Email notifications are not set up.' });
   }
 
-  const docUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/questionnaire_responses/${responseId}`;
+  const collection = isReview ? 'reviews' : 'questionnaire_responses';
+  const docUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collection}/${recordId}`;
   const docRes = await fetch(docUrl, { headers: { Authorization: `Bearer ${token}` } });
   if (!docRes.ok) {
     return res.status(403).json({ error: 'Not allowed.' });
   }
   const doc = await docRes.json();
 
-  const submittedAt = Date.parse(field(doc, 'submitted_at'));
-  if (field(doc, 'status') !== 'submitted' || !submittedAt || Date.now() - submittedAt > FRESH_MINUTES * 60 * 1000) {
+  const client = field(doc, 'client_name') || 'A client';
+  const contact = field(doc, 'contact_name') || client;
+  const title = field(doc, 'title') || (isReview ? 'their work' : 'questionnaire');
+  const project = field(doc, 'project_service');
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'vela-crm.vercel.app';
+
+  let when;
+  let headline;
+  let subject;
+  let link;
+  if (isReview) {
+    when = Date.parse(field(doc, 'client_activity_at'));
+    const status = field(doc, 'status');
+    const decided = field(doc, 'decided_at') && field(doc, 'decided_at') === field(doc, 'client_activity_at');
+    if (decided && status === 'approved') {
+      headline = `${contact} approved ${title.toLowerCase()}`;
+      subject = `${contact} approved “${title}”`;
+    } else if (decided && status === 'changes_requested') {
+      headline = `${contact} asked for changes to ${title.toLowerCase()}`;
+      subject = `${contact} asked for changes to “${title}”`;
+    } else {
+      headline = `${contact} left a comment on ${title.toLowerCase()}`;
+      subject = `New comment from ${contact} on “${title}”`;
+    }
+    link = `https://${host}/reviews/${recordId}`;
+  } else {
+    if (field(doc, 'status') !== 'submitted') {
+      return res.status(200).json({ sent: false, reason: 'Nothing new to report.' });
+    }
+    when = Date.parse(field(doc, 'submitted_at'));
+    headline = `${contact} filled in their questionnaire`;
+    subject = `${contact} submitted “${title}”`;
+    link = `https://${host}/questionnaires/responses/${recordId}`;
+  }
+  if (!when || Date.now() - when > FRESH_MINUTES * 60 * 1000) {
     return res.status(200).json({ sent: false, reason: 'Nothing new to report.' });
   }
 
-  const client = field(doc, 'client_name') || 'A client';
-  const contact = field(doc, 'contact_name') || client;
-  const title = field(doc, 'title') || 'questionnaire';
-  const project = field(doc, 'project_service');
-  const host = req.headers['x-forwarded-host'] || req.headers.host || 'vela-crm.vercel.app';
-  const link = `https://${host}/questionnaires/responses/${responseId}`;
-
+  const detail = `${title} for ${client}${project ? `, ${project}` : ''}.`;
   const html = `
     <div style="font-family:Helvetica,Arial,sans-serif;color:#1B2B4B;max-width:520px;line-height:1.5">
       <p style="font-size:13px;color:#A9822F;margin:0 0 6px">Vela</p>
-      <h1 style="font-family:Georgia,serif;font-size:22px;margin:0 0 12px">${escapeHtml(contact)} filled in their questionnaire</h1>
-      <p style="margin:0 0 18px;color:#56647E">${escapeHtml(title)} for ${escapeHtml(client)}${project ? `, ${escapeHtml(project)}` : ''}.</p>
-      <p style="margin:0 0 24px"><a href="${link}" style="background:#21409A;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;display:inline-block">Read their answers</a></p>
-      <p style="font-size:12px;color:#8892A6;margin:0">You’re getting this because a client submitted a questionnaire in your Vela portal.</p>
+      <h1 style="font-family:Georgia,serif;font-size:22px;margin:0 0 12px">${escapeHtml(headline)}</h1>
+      <p style="margin:0 0 18px;color:#56647E">${escapeHtml(detail)}</p>
+      <p style="margin:0 0 24px"><a href="${link}" style="background:#21409A;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;display:inline-block">Open in Vela</a></p>
+      <p style="font-size:12px;color:#8892A6;margin:0">You’re getting this because a client did something in your Vela portal.</p>
     </div>`;
 
   const sendRes = await fetch('https://api.resend.com/emails', {
@@ -72,9 +102,9 @@ module.exports = async function handler(req, res) {
     body: JSON.stringify({
       from: process.env.NOTIFY_FROM || 'Vela <onboarding@resend.dev>',
       to: [process.env.NOTIFY_EMAIL],
-      subject: `${contact} submitted “${title}”`,
+      subject,
       html,
-      text: `${contact} filled in their questionnaire: ${title} for ${client}${project ? `, ${project}` : ''}.\n\nRead their answers: ${link}`,
+      text: `${headline}. ${detail}\n\nOpen in Vela: ${link}`,
     }),
   });
 

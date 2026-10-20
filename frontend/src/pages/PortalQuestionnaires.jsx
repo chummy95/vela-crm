@@ -8,6 +8,7 @@ import { formatDate, relativeDay, stageLabels } from '../utils/format';
 import { RESPONSE_STATUS, missingRequired, progress } from '../utils/questionnaires';
 
 function stageName(r) {
+  if (r.stage_label) return r.stage_label;
   if (!r.project_service) return '';
   return stageLabels(r.project_service)[Number(r.stage_index || 0)] || '';
 }
