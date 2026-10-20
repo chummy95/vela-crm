@@ -420,8 +420,8 @@ export default function Projects() {
                             {index + 1}. {label}
                           </button>
                           <span className="row-sub" style={{ display: 'block' }}>
-                            {state === 'now' ? 'In progress' : state === 'done' ? 'Done' : 'Upcoming'}
-                            {steps.length ? `, ${doneCount} of ${steps.length} steps done` : ''}
+                            {state === 'now' ? 'In progress, ' : state === 'next' ? 'Upcoming, ' : doneCount === steps.length ? 'Done, ' : ''}
+                            {steps.length ? `${doneCount} of ${steps.length} steps done` : ''}
                           </span>
                           <span className="row-sub" style={{ display: 'block', color: 'var(--text-3)' }}>{steps.map((x) => x.step.label).join(' · ')}</span>
                           {forms.map((r) => {
