@@ -7,6 +7,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import Clients from './pages/Clients';
+import Questionnaires from './pages/Questionnaires';
+import PortalQuestionnaires from './pages/PortalQuestionnaires';
 import ClientProfile from './pages/ClientProfile';
 import Invoices from './pages/Invoices';
 import Proposals from './pages/Proposals';
@@ -72,6 +74,7 @@ export default function App() {
           <Route path="invoices/*" element={<Invoices />} />
           <Route path="proposals/*" element={<Proposals />} />
           <Route path="contracts/*" element={<Contracts />} />
+          <Route path="questionnaires/*" element={<Questionnaires />} />
           <Route path="scheduler" element={<Scheduler />} />
           <Route path="forms" element={<Forms />} />
           <Route path="messages" element={<Messages />} />
@@ -83,6 +86,7 @@ export default function App() {
           <Route path="invoices/*" element={<PortalInvoices />} />
           <Route path="proposals/*" element={<PortalProposals />} />
           <Route path="contracts/*" element={<PortalContracts />} />
+          <Route path="questionnaires/*" element={<PortalQuestionnaires />} />
           <Route path="schedule" element={<PortalSchedule />} />
           <Route path="messages" element={<PortalMessages />} />
         </Route>

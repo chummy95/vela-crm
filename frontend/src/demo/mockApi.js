@@ -1,5 +1,6 @@
 // Demo-mode data layer: same exports as src/utils/api.js, backed by in-memory sample data.
 // Used only by `npm run demo` (vite.demo.config.js). Never touches Firebase.
+import { brandStrategyStarter } from '../utils/questionnaires';
 
 export const USER_ROLES = { STUDIO: 'studio', CLIENT: 'client' };
 export function normalizeRole(value) {
@@ -75,6 +76,53 @@ export function setDemoScope(clientId) { scopeClientId = clientId || ''; }
 const visible = (coll) => (scopeClientId
   ? db[coll].filter((r) => (coll === 'clients' ? r.id === scopeClientId : r.client_id === scopeClientId))
   : db[coll]);
+
+const starter = brandStrategyStarter();
+const ans = (i) => starter.questions[i].id;
+db.questionnaires = [{ id: 'qt1', user_id: 'demo', ...starter, created_at: iso(day(-60)), updated_at: iso(day(-60)) }];
+db.questionnaire_responses = [
+  {
+    id: 'qr1', user_id: 'demo', studio_email: 'studio@example.com', client_id: 'c1', client_name: 'Maison Noor', contact_name: 'Layla Haddad',
+    project_id: 'pr1', project_service: 'Brand Identity', stage_index: 0, template_id: 'qt1', title: starter.title, description: starter.description,
+    questions: starter.questions,
+    answers: {
+      [ans(1)]: 'Maison Noor is a Riyadh fragrance house making oud-based perfumes for a younger, design-led audience.',
+      [ans(2)]: 'My grandmother blended her own oud at home. I wanted to bring that ritual to people my age without the heavy, old-fashioned packaging.',
+      [ans(5)]: 'Women 25 to 40 in Riyadh, Jeddah and Dubai who care about craft and quiet luxury, buy for themselves, and gift often.',
+      [ans(6)]: 'A heritage scent that feels personal and modern, not like their mother’s perfume.',
+      [ans(7)]: ['Instagram', 'Word of mouth', 'Shops and stockists'],
+      [ans(9)]: 'Big oud houses feel traditional; niche Western brands feel distant. We sit in between, with real family recipes.',
+      [ans(10)]: 'Premium',
+      [ans(12)]: 'Warm, considered, quietly confident, generous',
+      [ans(13)]: 'Loud, cheap, overly ornate',
+      [ans(17)]: 'Love warm terracotta, sand and deep green. Avoid gold foil everywhere.',
+      [ans(21)]: ['Packaging', 'Social media', 'Website'],
+      [ans(22)]: 'Saudi Arabia and UAE first, then UK. English and Arabic.',
+      [ans(23)]: 'Soft launch for Ramadan.',
+    },
+    status: 'submitted', seen_by_studio: false, sent_at: iso(day(-30)), updated_at: iso(day(0)), submitted_at: new Date(Date.now() - 1000 * 60 * 40).toISOString(),
+  },
+  {
+    id: 'qr2', user_id: 'demo', studio_email: 'studio@example.com', client_id: 'c4', client_name: 'Lumen Skin', contact_name: 'Priya Nair',
+    project_id: 'pr3', project_service: 'Packaging Design', stage_index: 0, template_id: 'qt1', title: starter.title, description: starter.description,
+    questions: starter.questions, answers: { [ans(1)]: 'Clean, clinical skincare for sensitive skin.' },
+    status: 'in_progress', seen_by_studio: false, sent_at: iso(day(-8)), updated_at: iso(day(-2)), submitted_at: '',
+  },
+  {
+    id: 'qr3', user_id: 'demo', studio_email: 'studio@example.com', client_id: 'c1', client_name: 'Maison Noor', contact_name: 'Layla Haddad',
+    project_id: 'pr1', project_service: 'Brand Identity', stage_index: 3, template_id: 'qt1', title: 'First draft feedback',
+    description: 'A few quick questions so I can refine the first draft before our call.',
+    questions: [
+      { id: 'f1', type: 'textarea', label: 'What’s your first reaction to the logo direction?', help: '', options: '', required: true },
+      { id: 'f2', type: 'choice', label: 'Which colour palette feels most like Maison Noor?', help: '', options: 'Palette A, Palette B, Palette C', required: true },
+      { id: 'f3', type: 'textarea', label: 'Anything you’d like changed?', help: '', options: '', required: false },
+    ],
+    answers: {}, status: 'sent', seen_by_studio: false, sent_at: iso(day(-1)), updated_at: iso(day(-1)), submitted_at: '',
+  },
+];
+
+const listeners = new Set();
+function emitResponses() { listeners.forEach((fn) => fn(JSON.parse(JSON.stringify(db.questionnaire_responses)))); }
 
 const delay = (v) => new Promise((r) => setTimeout(() => r(JSON.parse(JSON.stringify(v))), 80));
 const byId = (coll, rid) => db[coll].find((r) => r.id === rid);
@@ -213,5 +261,71 @@ export const messagesAPI = {
     const row = { id: id(), client_id: target, client_name: c?.name, color: c?.color, text, outbound: !scopeClientId, sent_at: new Date().toISOString() };
     db.messages.push(row);
     return delay(row);
+  },
+};
+
+export const questionnairesAPI = {
+  async listTemplates() { return delay(scopeClientId ? [] : db.questionnaires); },
+  async getTemplate(rid) { return delay(byId('questionnaires', rid)); },
+  async createTemplate(body) {
+    const row = { id: id(), user_id: 'demo', title: body.title || 'Untitled questionnaire', description: body.description || '', questions: (body.questions || []).filter((q) => q.label), created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    db.questionnaires.unshift(row);
+    return delay(row);
+  },
+  async updateTemplate(rid, body) {
+    const row = byId('questionnaires', rid);
+    Object.assign(row, { title: body.title, description: body.description, questions: (body.questions || []).filter((q) => q.label), updated_at: new Date().toISOString() });
+    return delay(row);
+  },
+  async removeTemplate(rid) { db.questionnaires = db.questionnaires.filter((r) => r.id !== rid); return delay({ success: true }); },
+  async listResponses() { return delay(visible('questionnaire_responses')); },
+  async getResponse(rid) { return delay(visible('questionnaire_responses').find((r) => r.id === rid)); },
+  async send({ template_id, client_id, project_id, stage_index, note }) {
+    const t = byId('questionnaires', template_id);
+    const c = byId('clients', client_id);
+    const p = project_id ? byId('projects', project_id) : null;
+    if (!t || !c) throw new Error('Choose a questionnaire and a client.');
+    const row = {
+      id: id(), user_id: 'demo', studio_email: 'studio@example.com', client_id: c.id, client_name: c.name, contact_name: c.contact || '',
+      project_id: p?.id || '', project_service: p?.service || '', stage_index: Number(stage_index) || 0, template_id: t.id,
+      title: t.title, description: note || t.description || '', questions: t.questions, answers: {}, status: 'sent', seen_by_studio: false,
+      sent_at: new Date().toISOString(), updated_at: new Date().toISOString(), submitted_at: '',
+    };
+    db.questionnaire_responses.unshift(row);
+    emitResponses();
+    return delay(row);
+  },
+  async saveAnswers(rid, answers) {
+    const row = byId('questionnaire_responses', rid);
+    Object.assign(row, { answers, status: 'in_progress', updated_at: new Date().toISOString() });
+    emitResponses();
+    return delay(row);
+  },
+  async submit(rid, answers) {
+    const row = byId('questionnaire_responses', rid);
+    const stamp = new Date().toISOString();
+    Object.assign(row, { answers, status: 'submitted', submitted_at: stamp, updated_at: stamp });
+    emitResponses();
+    return delay(row);
+  },
+  async markSeen(rid) { byId('questionnaire_responses', rid).seen_by_studio = true; emitResponses(); return delay({ success: true }); },
+  async reopen(rid) {
+    const row = byId('questionnaire_responses', rid);
+    Object.assign(row, { status: 'in_progress', seen_by_studio: false, submitted_at: '', updated_at: new Date().toISOString() });
+    emitResponses();
+    return delay(row);
+  },
+  async removeResponse(rid) { db.questionnaire_responses = db.questionnaire_responses.filter((r) => r.id !== rid); emitResponses(); return delay({ success: true }); },
+  subscribeResponses(onChange) {
+    listeners.add(onChange);
+    setTimeout(() => onChange(JSON.parse(JSON.stringify(db.questionnaire_responses))), 50);
+    // Demo only: simulate a client submitting while you watch, so the live alert can be seen.
+    if (typeof window !== 'undefined' && /[?&]demoSubmit=1/.test(window.location.search)) {
+      setTimeout(() => {
+        const row = db.questionnaire_responses.find((r) => r.id === 'qr2');
+        if (row && row.status !== 'submitted') { row.status = 'submitted'; row.submitted_at = new Date().toISOString(); row.seen_by_studio = false; emitResponses(); }
+      }, 2500);
+    }
+    return () => listeners.delete(onChange);
   },
 };

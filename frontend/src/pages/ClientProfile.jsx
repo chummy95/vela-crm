@@ -7,6 +7,8 @@ import ClientMark from '../components/ClientMark';
 import ClientForm, { clientToForm } from '../components/ClientForm';
 import { JourneyRail } from '../components/ProjectJourney';
 import { useAuth } from '../hooks/useAuth';
+import { useQuestionnaireAlerts } from '../hooks/useQuestionnaireAlerts';
+import { RESPONSE_STATUS } from '../utils/questionnaires';
 import {
   clientsAPI, contractsAPI, eventsAPI, invoicesAPI, messagesAPI, projectsAPI, proposalsAPI,
 } from '../utils/api';
@@ -27,6 +29,7 @@ export default function ClientProfile() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const currency = user?.currency || 'GBP';
+  const { responses } = useQuestionnaireAlerts();
 
   const [client, setClient] = useState(null);
   const [related, setRelated] = useState({ projects: [], invoices: [], proposals: [], contracts: [], events: [], messages: [] });
@@ -92,6 +95,10 @@ export default function ClientProfile() {
   const paperwork = [
     ...proposals.map((p) => ({ id: p.id, kind: 'Proposal', to: `/proposals/${p.id}`, title: p.service || 'Proposal', date: p.date || p.created_at, value: p.value, status: p.status || 'draft' })),
     ...contracts.map((c) => ({ id: c.id, kind: 'Contract', to: `/contracts/${c.id}`, title: c.service || 'Contract', date: c.date || c.created_at, value: c.value, status: c.signed ? 'signed' : 'unsigned' })),
+    ...responses.filter((r) => r.client_id === clientId).map((r) => ({
+      id: r.id, kind: 'Questionnaire', to: `/questionnaires/responses/${r.id}`, title: r.title, date: r.submitted_at || r.sent_at, value: '',
+      status: RESPONSE_STATUS[r.status]?.pill || 'pending', label: RESPONSE_STATUS[r.status]?.label,
+    })),
   ].sort((a, b) => String(b.date).localeCompare(String(a.date)));
 
   function openEdit() {
@@ -288,25 +295,25 @@ export default function ClientProfile() {
                   </section>
 
                   <section className="section" aria-labelledby="docs-h">
-                    <div className="section-h"><h2 id="docs-h" className="h-section">Proposals and contracts</h2></div>
+                    <div className="section-h"><h2 id="docs-h" className="h-section">Paperwork and questionnaires</h2></div>
                     <div className="panel">
                       {paperwork.length ? (
                         <ul className="rows">
                           {paperwork.map((d) => (
                             <li key={`${d.kind}-${d.id}`}>
                               <Link className="row" to={d.to} style={{ alignItems: 'center' }}>
-                                <Icon name={d.kind === 'Proposal' ? 'proposal' : 'contract'} size={20} className="ico muted" />
+                                <Icon name={d.kind === 'Proposal' ? 'proposal' : d.kind === 'Questionnaire' ? 'clipboard' : 'contract'} size={20} className="ico muted" />
                                 <span className="row-main">
                                   <span className="row-title" style={{ display: 'block' }}>{d.kind}: {d.title}</span>
                                   <span className="row-sub" style={{ display: 'block' }}>{formatDate(d.date, { day: 'numeric', month: 'short', year: 'numeric' })}{d.value ? `, ${formatMoney(d.value, currency)}` : ''}</span>
                                 </span>
-                                <Pill status={d.status} />
+                                <Pill status={d.status} label={d.label} />
                               </Link>
                             </li>
                           ))}
                         </ul>
                       ) : (
-                        <div className="empty">No proposals or contracts yet. <Link to="/proposals">Write a proposal</Link></div>
+                        <div className="empty">Nothing sent to {client.name} yet. <Link to="/proposals">Write a proposal</Link> or <Link to="/questionnaires">send a questionnaire</Link>.</div>
                       )}
                     </div>
                   </section>

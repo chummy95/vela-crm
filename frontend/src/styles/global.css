@@ -443,6 +443,45 @@ textarea.fi { resize: vertical; min-height: 72px; line-height: 1.6; }
 .col-val { font-size: 11.5px; color: var(--text-2); margin-bottom: 4px; white-space: nowrap; }
 .col-label { position: absolute; bottom: -22px; font-size: 12px; color: var(--text-2); }
 
+/* ── Badges, toasts ────────────────────────────────────────── */
+.ni-badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #C9A84C; color: var(--ink); font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+.toasts { position: fixed; right: 20px; bottom: 20px; z-index: 1100; display: flex; flex-direction: column; gap: 10px; width: min(380px, calc(100vw - 32px)); }
+.toast { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--brass); border-radius: var(--r-md); padding: 14px 12px 14px 14px; box-shadow: var(--shadow-pop); animation: pop .2s ease-out; }
+.toast-ico { width: 32px; height: 32px; border-radius: 50%; background: var(--brass-soft); color: var(--brass); display: inline-flex; align-items: center; justify-content: center; }
+
+/* ── Questionnaires ────────────────────────────────────────── */
+.q-editor-item { padding: 18px; margin-bottom: 12px; }
+.stage-form { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper); color: var(--text-2); text-decoration: none; }
+.stage-form:hover { border-color: #CFC6B6; text-decoration: none; }
+.stage-form .ni-badge { margin-left: 0; }
+.q-editor-item.section { background: var(--paper); }
+.q-progress { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.q-progress span { display: block; height: 100%; background: var(--ink); border-radius: 999px; transition: width .3s ease; }
+.q-fill { max-width: 760px; }
+.q-section { font-family: var(--font-heading); font-size: 22px; font-weight: 600; color: var(--ink); margin: 34px 0 6px; padding-top: 18px; border-top: 1px solid var(--line); }
+.q-section:first-of-type { border-top: none; padding-top: 0; margin-top: 8px; }
+.q-item { margin: 22px 0; }
+.q-label { display: block; font-size: 15px; font-weight: 500; color: var(--ink); margin-bottom: 4px; }
+.q-help { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+.q-item.missing .fi { border-color: var(--err); }
+.q-item.missing .q-label::after { content: ' Please answer this one'; font-size: 12.5px; font-weight: 400; color: var(--err); }
+.q-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.q-option { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 14px; cursor: pointer; transition: border-color .12s, background .12s; }
+.q-option:hover { border-color: #C9C0B1; }
+.q-option input { accent-color: var(--ink); }
+.q-option.on { border-color: var(--ink); background: var(--navy-pale); }
+.q-submitbar { position: sticky; bottom: 0; margin-top: 28px; padding: 14px 0; background: linear-gradient(to top, var(--paper) 70%, transparent); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.answer-block { padding: 16px 0; border-bottom: 1px solid var(--line-soft); }
+.answer-block:last-child { border-bottom: none; }
+.answer-q { font-family: var(--font-body); font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
+.answer-a { font-size: 15.5px; white-space: pre-wrap; }
+.answer-a.none { color: var(--text-3); font-style: italic; }
+@media print {
+  .sidebar, .mobile-bar, .topbar, .toasts, .no-print { display: none !important; }
+  body, .app, .main, .content { height: auto !important; overflow: visible !important; background: #fff !important; }
+  .doc-preview { border: none; box-shadow: none; padding: 0; }
+}
+
 /* ── Scrollbars & motion ───────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

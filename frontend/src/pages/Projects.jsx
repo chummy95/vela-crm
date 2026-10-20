@@ -5,7 +5,10 @@ import Pill from '../components/Pill';
 import Icon from '../components/Icon';
 import ClientMark from '../components/ClientMark';
 import { JourneyRail } from '../components/ProjectJourney';
+import SendQuestionnaire from '../components/SendQuestionnaire';
 import { useAuth } from '../hooks/useAuth';
+import { useQuestionnaireAlerts } from '../hooks/useQuestionnaireAlerts';
+import { RESPONSE_STATUS, progress } from '../utils/questionnaires';
 import { clientsAPI, projectsAPI } from '../utils/api';
 import { formatDate, formatMoney, stageLabels } from '../utils/format';
 
@@ -93,6 +96,8 @@ export default function Projects() {
   const routeProjectId = (params['*'] || '').split('/')[0] || '';
   const { user } = useAuth();
   const currency = user?.currency || 'GBP';
+  const { responses } = useQuestionnaireAlerts();
+  const [sendStage, setSendStage] = useState(null);
 
   const [projects, setProjects] = useState([]);
   const [clients, setClients] = useState([]);
@@ -309,6 +314,7 @@ export default function Projects() {
     const done = isDone(project);
     const signed = new Set((project.signoffs || []).map(Number));
     const atLast = current >= labels.length - 1;
+    const projectForms = responses.filter((r) => r.project_id === project.id);
 
     return (
       <>
@@ -348,6 +354,7 @@ export default function Projects() {
                   {!done && signed.has(current) && <div style={{ fontSize: 13, color: 'var(--ok)', marginTop: 2 }}>Signed off by the client</div>}
                 </div>
                 <div className="tb-r">
+                  {!done && <button className="btn bg" type="button" onClick={() => setSendStage(current)}><Icon name="clipboard" />Send questionnaire</button>}
                   {done ? (
                     <button className="btn bg" type="button" disabled={busy} onClick={() => setStatus('active')}>Reopen project</button>
                   ) : (
@@ -369,6 +376,7 @@ export default function Projects() {
                 <ol className="panel rows" style={{ listStyle: 'none' }}>
                   {labels.map((label, index) => {
                     const files = (project.files || []).filter((f) => Number(f.stage_index || 0) === index);
+                    const forms = projectForms.filter((r) => Number(r.stage_index || 0) === index);
                     const state = done || index < current ? 'done' : index === current ? 'now' : 'next';
                     return (
                       <li key={label} className="row" style={{ cursor: 'default', alignItems: 'flex-start' }}>
@@ -381,6 +389,22 @@ export default function Projects() {
                             {state === 'now' ? 'In progress' : state === 'done' ? 'Done' : 'Upcoming'}
                             {signed.has(index) ? ', signed off' : ''}
                           </span>
+                          {forms.map((r) => {
+                            const pr = progress(r.questions, r.answers);
+                            const isNew = r.status === 'submitted' && !r.seen_by_studio;
+                            return (
+                              <Link key={r.id} to={`/questionnaires/responses/${r.id}`} className="stage-form">
+                                <Icon name="clipboard" size={16} />
+                                <span className="row-main">
+                                  <span style={{ display: 'block', fontWeight: 500, color: 'var(--ink)' }}>{r.title}</span>
+                                  <span className="row-sub" style={{ display: 'block' }}>
+                                    {r.status === 'submitted' ? `Submitted ${formatDate(r.submitted_at)}` : r.status === 'in_progress' ? `In progress, ${pr.done} of ${pr.total} answered` : 'Sent, not started yet'}
+                                  </span>
+                                </span>
+                                {isNew ? <span className="ni-badge">New</span> : <Pill status={RESPONSE_STATUS[r.status]?.pill || 'pending'} label={RESPONSE_STATUS[r.status]?.label} />}
+                              </Link>
+                            );
+                          })}
                           {files.length > 0 && (
                             <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                               {files.map((f) => (
@@ -424,6 +448,11 @@ export default function Projects() {
           </div>
         </div>
 
+        <SendQuestionnaire
+          open={sendStage !== null}
+          onClose={() => setSendStage(null)}
+          defaults={{ client_id: project.client_id, project_id: project.id, stage_index: sendStage ?? current }}
+        />
         <Modal
           open={editOpen}
           onClose={() => setEditOpen(false)}

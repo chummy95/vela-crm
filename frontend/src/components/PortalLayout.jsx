@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 const NAV = [
   { to: '/portal',           label: 'Overview',  icon: 'home' },
   { to: '/portal/projects',  label: 'Projects',  icon: 'folder',   section: 'Your work' },
+  { to: '/portal/questionnaires', label: 'Questionnaires', icon: 'clipboard' },
   { to: '/portal/messages',  label: 'Messages',  icon: 'message' },
   { to: '/portal/schedule',  label: 'Schedule',  icon: 'calendar' },
   { to: '/portal/proposals', label: 'Proposals', icon: 'proposal', section: 'Paperwork' },

@@ -1,0 +1,87 @@
+// Emails the studio when a client submits a questionnaire.
+//
+// Called by the client portal right after a submission, with the client's Firebase sign-in token.
+// It reads the questionnaire back from Firestore *as that client*, so the security rules decide
+// whether the caller really owns it, and only emails if it was genuinely submitted in the last
+// few minutes. Needs two environment variables in Vercel: RESEND_API_KEY and NOTIFY_EMAIL.
+
+const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'vela-crm-2ca57';
+const FRESH_MINUTES = 15;
+
+function field(doc, name) {
+  const value = doc?.fields?.[name];
+  if (!value) return '';
+  return value.stringValue ?? value.integerValue ?? value.booleanValue ?? '';
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+module.exports = async function handler(req, res) {
+  const configured = Boolean(process.env.RESEND_API_KEY && process.env.NOTIFY_EMAIL);
+
+  if (req.method === 'GET') {
+    return res.status(200).json({ configured });
+  }
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const responseId = String(req.body?.responseId || '').trim();
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(responseId) || !token) {
+    return res.status(400).json({ error: 'Missing questionnaire or sign-in.' });
+  }
+  if (!configured) {
+    return res.status(200).json({ sent: false, reason: 'Email notifications are not set up.' });
+  }
+
+  const docUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/questionnaire_responses/${responseId}`;
+  const docRes = await fetch(docUrl, { headers: { Authorization: `Bearer ${token}` } });
+  if (!docRes.ok) {
+    return res.status(403).json({ error: 'Not allowed.' });
+  }
+  const doc = await docRes.json();
+
+  const submittedAt = Date.parse(field(doc, 'submitted_at'));
+  if (field(doc, 'status') !== 'submitted' || !submittedAt || Date.now() - submittedAt > FRESH_MINUTES * 60 * 1000) {
+    return res.status(200).json({ sent: false, reason: 'Nothing new to report.' });
+  }
+
+  const client = field(doc, 'client_name') || 'A client';
+  const contact = field(doc, 'contact_name') || client;
+  const title = field(doc, 'title') || 'questionnaire';
+  const project = field(doc, 'project_service');
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'vela-crm.vercel.app';
+  const link = `https://${host}/questionnaires/responses/${responseId}`;
+
+  const html = `
+    <div style="font-family:Helvetica,Arial,sans-serif;color:#1B2B4B;max-width:520px;line-height:1.5">
+      <p style="font-size:13px;color:#A9822F;margin:0 0 6px">Vela</p>
+      <h1 style="font-family:Georgia,serif;font-size:22px;margin:0 0 12px">${escapeHtml(contact)} filled in their questionnaire</h1>
+      <p style="margin:0 0 18px;color:#56647E">${escapeHtml(title)} for ${escapeHtml(client)}${project ? `, ${escapeHtml(project)}` : ''}.</p>
+      <p style="margin:0 0 24px"><a href="${link}" style="background:#21409A;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;display:inline-block">Read their answers</a></p>
+      <p style="font-size:12px;color:#8892A6;margin:0">You’re getting this because a client submitted a questionnaire in your Vela portal.</p>
+    </div>`;
+
+  const sendRes = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: process.env.NOTIFY_FROM || 'Vela <onboarding@resend.dev>',
+      to: [process.env.NOTIFY_EMAIL],
+      subject: `${contact} submitted “${title}”`,
+      html,
+      text: `${contact} filled in their questionnaire: ${title} for ${client}${project ? `, ${project}` : ''}.\n\nRead their answers: ${link}`,
+    }),
+  });
+
+  if (!sendRes.ok) {
+    const detail = await sendRes.text().catch(() => '');
+    console.error('Resend error', sendRes.status, detail.slice(0, 300));
+    return res.status(502).json({ sent: false, error: 'The email service rejected the message.' });
+  }
+  return res.status(200).json({ sent: true });
+};
