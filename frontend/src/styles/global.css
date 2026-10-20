@@ -620,3 +620,4 @@ a.file-row:hover { border-color: #CFC6B6; text-decoration: none; }
   .wf-step { grid-template-columns: 1fr; }
   .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.gallery-wait { aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: var(--text-3); background: var(--surface); }

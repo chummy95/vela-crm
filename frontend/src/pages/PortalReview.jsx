@@ -86,7 +86,7 @@ export default function PortalReview() {
               {review.note && <div className="review-note">{review.note}</div>}
               <div className="panel" style={{ padding: 18 }}>
                 <h2 className="card-title" style={{ marginBottom: 12 }}>{delivery ? 'Download your files' : 'Have a look'}</h2>
-                <FileList files={review.files || []} download={delivery} />
+                <FileList files={review.files || []} reviewId={review.id} download={delivery} />
               </div>
 
               {!delivery && (

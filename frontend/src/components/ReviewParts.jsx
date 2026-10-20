@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
-import { reviewsAPI } from '../utils/api';
+import { filesAPI, reviewsAPI } from '../utils/api';
 
 export function formatBytes(bytes) {
   const n = Number(bytes) || 0;
@@ -11,22 +11,50 @@ export function formatBytes(bytes) {
 
 const isImage = (f) => f.kind !== 'link' && (/^image\//.test(f.type || '') || /\.(png|jpe?g|gif|webp|svg|avif)(\?|$)/i.test(f.url));
 
+// Private files (uploaded to Vela's store) open through short-lived links fetched per review.
+function useOpenableFiles(reviewId, files) {
+  const privateUrls = files.filter((f) => f.pathname).map((f) => f.url);
+  const key = `${reviewId}|${privateUrls.join('|')}`;
+  const [state, setState] = useState({ key: '', links: {}, error: '' });
+
+  useEffect(() => {
+    if (!privateUrls.length) return undefined;
+    let cancelled = false;
+    const load = () => filesAPI.links(reviewId, privateUrls)
+      .then((links) => { if (!cancelled) setState({ key, links, error: '' }); })
+      .catch((err) => { if (!cancelled) setState({ key, links: {}, error: err.message }); });
+    load();
+    const timer = setInterval(load, 45 * 60 * 1000); // links last an hour
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ready = !privateUrls.length || state.key === key;
+  return {
+    error: state.key === key ? state.error : '',
+    files: files.map((f) => (f.pathname ? { ...f, href: ready ? state.links[f.url] || '' : '' , pending: !ready } : { ...f, href: f.url })),
+  };
+}
+
 // Images as a gallery; everything else (PDFs, archives, links) as a list.
-export function FileList({ files = [], download = false }) {
+export function FileList({ files: rawFiles = [], reviewId, download = false }) {
+  const { files, error } = useOpenableFiles(reviewId, rawFiles);
   const images = files.filter(isImage);
   const others = files.filter((f) => !isImage(f));
   return (
     <div>
+      {error && <div className="form-error">{error}</div>}
       {images.length > 0 && (
         <div className="gallery">
           {images.map((f) => (
             <figure key={f.url} className="gallery-item">
-              <a href={f.url} target="_blank" rel="noreferrer" title={`Open ${f.name} full size`}>
-                <img src={f.url} alt={f.name} loading="lazy" />
-              </a>
+              {f.href ? (
+                <a href={f.href} target="_blank" rel="noreferrer" title={`Open ${f.name} full size`}>
+                  <img src={f.href} alt={f.name} loading="lazy" />
+                </a>
+              ) : <div className="gallery-wait">{f.pending ? 'Loading…' : 'Not available'}</div>}
               <figcaption>
                 <span>{f.name}</span>
-                {download && <a href={f.url} download={f.name} target="_blank" rel="noreferrer">Download</a>}
+                {download && f.href && <a href={f.href} download={f.name} target="_blank" rel="noreferrer">Download</a>}
               </figcaption>
             </figure>
           ))}
@@ -36,7 +64,7 @@ export function FileList({ files = [], download = false }) {
         <ul className="file-rows">
           {others.map((f) => (
             <li key={f.url}>
-              <a className="file-row" href={f.url} target="_blank" rel="noreferrer" download={download && f.kind !== 'link' ? f.name : undefined}>
+              <a className="file-row" href={f.href || undefined} aria-disabled={!f.href} target="_blank" rel="noreferrer" download={download && f.kind !== 'link' ? f.name : undefined}>
                 <Icon name={f.kind === 'link' ? 'link' : 'proposal'} size={18} className="ico muted" />
                 <span className="row-main">
                   <span className="row-title" style={{ display: 'block' }}>{f.name}</span>
@@ -44,7 +72,7 @@ export function FileList({ files = [], download = false }) {
                     {f.kind === 'link' ? new URL(f.url).hostname.replace(/^www\./, '') : [String(f.type || '').split('/').pop().toUpperCase(), formatBytes(f.size)].filter(Boolean).join(', ')}
                   </span>
                 </span>
-                <span className="faint" style={{ fontSize: 13 }}>{f.kind === 'link' ? 'Open link' : download ? 'Download' : 'Open'}</span>
+                <span className="faint" style={{ fontSize: 13 }}>{f.pending ? 'Loading…' : !f.href ? 'Not available' : f.kind === 'link' ? 'Open link' : download ? 'Download' : 'Open'}</span>
               </a>
             </li>
           ))}
