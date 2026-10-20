@@ -17,6 +17,7 @@ const PATHS = {
   search: <><circle cx="11" cy="11" r="6" /><path d="m19.5 19.5-4-4" /></>,
   back: <path d="M14.5 6 8.5 12l6 6" />,
   forward: <path d="m9.5 6 6 6-6 6" />,
+  settings: <><circle cx="12" cy="12" r="3" /><path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6" /></>,
   up: <path d="m6 14.5 6-6 6 6" />,
   down: <path d="m6 9.5 6 6 6-6" />,
   lock: <><rect x="5" y="10.5" width="14" height="10" rx="1.5" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></>,

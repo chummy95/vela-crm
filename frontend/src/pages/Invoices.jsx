@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import Modal from '../components/Modal';
 import Pill from '../components/Pill';
 import Icon from '../components/Icon';
 import ClientMark from '../components/ClientMark';
+import InvoiceDocument from '../components/InvoiceDocument';
+import InvoiceEditor, { blankInvoiceForm, invoiceToForm } from '../components/InvoiceEditor';
 import { useAuth } from '../hooks/useAuth';
-import { clientsAPI, invoicesAPI, projectsAPI } from '../utils/api';
-import { formatDate, formatMoney, isOverdue, parseAmount, relativeDay, stageLabel } from '../utils/format';
+import { clientsAPI, invoicesAPI, paymentsAPI, projectsAPI, studioProfileAPI } from '../utils/api';
+import { formatDate, formatMoney, isOverdue, relativeDay, stageLabel } from '../utils/format';
+import { DEFAULT_STUDIO_PROFILE, money, toNumber } from '../utils/invoices';
+import { downloadInvoicePdf } from '../utils/invoicePdf';
 
 const FILTERS = [
   { key: 'open', label: 'Unpaid' },
@@ -14,109 +17,60 @@ const FILTERS = [
   { key: 'all', label: 'All' },
 ];
 
-function blankInvoice(clientId = '') {
-  return { client_id: clientId, project_id: '', description: '', amount: '', due_date: '', status: 'unpaid' };
-}
-
-function InvoiceFields({ id, value, onChange, onSubmit, clients, projects, error }) {
-  const set = (key) => (e) => onChange({ ...value, [key]: e.target.value });
-  const clientProjects = projects.filter((p) => p.client_id === value.client_id);
-  return (
-    <form id={id} onSubmit={onSubmit}>
-      {error && <div className="form-error">{error}</div>}
-      <div className="fi-row">
-        <div className="fc">
-          <label className="fc-label" htmlFor={`${id}-client`}>Client</label>
-          <select id={`${id}-client`} className="fi fsel" value={value.client_id} onChange={(e) => onChange({ ...value, client_id: e.target.value, project_id: '' })} required>
-            <option value="" disabled>Choose a client</option>
-            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-        <div className="fc">
-          <label className="fc-label" htmlFor={`${id}-project`}>Project</label>
-          <select id={`${id}-project`} className="fi fsel" value={value.project_id} onChange={set('project_id')}>
-            <option value="">Not linked to a project</option>
-            {clientProjects.map((p) => <option key={p.id} value={p.id}>{p.service}</option>)}
-          </select>
-        </div>
-      </div>
-      <div className="fc">
-        <label className="fc-label" htmlFor={`${id}-desc`}>What it’s for</label>
-        <input id={`${id}-desc`} className="fi" value={value.description} onChange={set('description')} placeholder="Brand identity, 50% deposit" />
-      </div>
-      <div className="fi-row">
-        <div className="fc" style={{ marginBottom: 0 }}>
-          <label className="fc-label" htmlFor={`${id}-amount`}>Amount</label>
-          <input id={`${id}-amount`} className="fi" inputMode="decimal" value={value.amount} onChange={set('amount')} placeholder="2400" required />
-        </div>
-        <div className="fc" style={{ marginBottom: 0 }}>
-          <label className="fc-label" htmlFor={`${id}-due`}>Due date</label>
-          <input id={`${id}-due`} className="fi" type="date" value={value.due_date} onChange={set('due_date')} />
-        </div>
-      </div>
-    </form>
-  );
-}
+const longDate = { day: 'numeric', month: 'long', year: 'numeric' };
 
 export default function Invoices() {
   const navigate = useNavigate();
   const params = useParams();
   const routeInvoiceId = (params['*'] || '').split('/')[0] || '';
   const { user } = useAuth();
-  const currency = user?.currency || 'GBP';
 
   const [invoices, setInvoices] = useState([]);
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [profile, setProfile] = useState(DEFAULT_STUDIO_PROFILE);
+  const [stripe, setStripe] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [filter, setFilter] = useState('open');
   const [pageError, setPageError] = useState('');
-
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState(blankInvoice());
-  const [createError, setCreateError] = useState('');
-  const [savingCreate, setSavingCreate] = useState(false);
-
-  const [detailForm, setDetailForm] = useState(blankInvoice());
-  const [detailError, setDetailError] = useState('');
-  const [savingDetail, setSavingDetail] = useState(false);
+  const [editor, setEditor] = useState(null); // { mode: 'create' | 'edit', initial }
+  const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const currency = profile.currency || user?.currency || 'GBP';
 
   useEffect(() => {
-    Promise.all([invoicesAPI.list(), clientsAPI.list(), projectsAPI.list()])
-      .then(([invoiceRows, clientRows, projectRows]) => {
+    Promise.all([invoicesAPI.list(), clientsAPI.list(), projectsAPI.list(), studioProfileAPI.get().catch(() => DEFAULT_STUDIO_PROFILE)])
+      .then(([invoiceRows, clientRows, projectRows, profileRow]) => {
         setInvoices(invoiceRows);
         setClients(clientRows);
         setProjects(projectRows);
+        setProfile(profileRow);
       })
       .catch((err) => setPageError(err.message))
       .finally(() => setLoaded(true));
+    paymentsAPI.status().then((s) => setStripe(Boolean(s.stripe)));
   }, []);
 
-  const selected = useMemo(() => invoices.find((i) => i.id === routeInvoiceId) || null, [invoices, routeInvoiceId]);
-
+  // Invoices marked paid in the background (Stripe) while this page is open.
   useEffect(() => {
-    if (!selected) return;
-    setDetailForm({
-      client_id: selected.client_id || '',
-      project_id: selected.project_id || '',
-      description: selected.description || '',
-      amount: selected.amount || '',
-      due_date: selected.due_date || '',
-      status: selected.status || 'unpaid',
-    });
-    setDetailError('');
-    setConfirmDelete(false);
-  }, [selected]);
+    const onPaid = (e) => setInvoices((prev) => prev.map((i) => (i.id === e.detail.id ? { ...i, ...e.detail.changes } : i)));
+    window.addEventListener('vela:invoice-paid', onPaid);
+    return () => window.removeEventListener('vela:invoice-paid', onPaid);
+  }, []);
+
+  useEffect(() => { setConfirmDelete(false); }, [routeInvoiceId]);
+
+  const selected = useMemo(() => invoices.find((i) => i.id === routeInvoiceId) || null, [invoices, routeInvoiceId]);
+  const cur = (inv) => inv?.currency || currency;
 
   const totals = useMemo(() => {
     const unpaid = invoices.filter((i) => i.status !== 'paid');
     return {
-      unpaid: unpaid.reduce((s, i) => s + parseAmount(i.amount), 0),
-      overdue: unpaid.filter(isOverdue).reduce((s, i) => s + parseAmount(i.amount), 0),
+      unpaid: unpaid.reduce((s, i) => s + toNumber(i.amount), 0),
+      overdue: unpaid.filter(isOverdue).reduce((s, i) => s + toNumber(i.amount), 0),
       overdueCount: unpaid.filter(isOverdue).length,
-      paid: invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + parseAmount(i.amount), 0),
+      paid: invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + toNumber(i.amount), 0),
     };
   }, [invoices]);
 
@@ -139,76 +93,156 @@ export default function Invoices() {
     all: invoices.length,
   };
 
-  function colorFor(clientId) {
-    return clients.find((c) => c.id === clientId)?.color;
-  }
+  const colorFor = (clientId) => clients.find((c) => c.id === clientId)?.color;
 
   function openCreate() {
-    setCreateForm(blankInvoice(clients[0]?.id || ''));
-    setCreateError('');
-    setCreateOpen(true);
-  }
-
-  async function handleCreate(event) {
-    event.preventDefault();
-    setSavingCreate(true);
-    setCreateError('');
-    try {
-      const created = await invoicesAPI.create(createForm);
-      setInvoices((prev) => [created, ...prev]);
-      setCreateOpen(false);
-      setFilter('open');
-    } catch (err) {
-      setCreateError(err.message);
-    } finally {
-      setSavingCreate(false);
+    const first = clients[0];
+    const initial = blankInvoiceForm(profile, '');
+    if (first) {
+      const last = invoices.find((i) => i.client_id === first.id && i.bill_to);
+      Object.assign(initial, { client_id: first.id, bill_to: { name: first.name, contact: first.contact || '', email: first.email || '', address: last?.bill_to?.address || '', vat_number: last?.bill_to?.vat_number || '' } });
     }
+    setEditor({ mode: 'create', initial });
   }
 
-  async function handleUpdate(event) {
-    event.preventDefault();
-    setSavingDetail(true);
-    setDetailError('');
-    try {
-      const updated = await invoicesAPI.update(selected.id, detailForm);
-      setInvoices((prev) => prev.map((i) => (i.id === selected.id ? { ...i, ...(updated || detailForm) } : i)));
-      navigate('/invoices');
-    } catch (err) {
-      setDetailError(err.message);
-    } finally {
-      setSavingDetail(false);
+  async function saveInvoice(form) {
+    if (editor.mode === 'create') {
+      const created = await invoicesAPI.create(form);
+      setInvoices((prev) => [created, ...prev]);
+      setProfile((p) => ({ ...p, next_invoice_number: (Number(p.next_invoice_number) || 1) + 1 }));
+      navigate(`/invoices/${created.id}`);
+    } else {
+      const updated = await invoicesAPI.update(selected.id, form);
+      setInvoices((prev) => prev.map((i) => (i.id === selected.id ? { ...i, ...updated } : i)));
     }
   }
 
   async function toggleStatus(invoice) {
     const status = invoice.status === 'paid' ? 'unpaid' : 'paid';
+    setBusy(true);
     try {
-      await invoicesAPI.updateStatus(invoice.id, status);
-      setInvoices((prev) => prev.map((i) => (i.id === invoice.id ? { ...i, status } : i)));
-      if (selected?.id === invoice.id) setDetailForm((current) => ({ ...current, status }));
+      const result = await invoicesAPI.updateStatus(invoice.id, status, { payment_method: status === 'paid' ? 'Marked paid' : '' });
+      setInvoices((prev) => prev.map((i) => (i.id === invoice.id ? { ...i, status, paid_at: result.paid_at || '', payment_method: result.payment_method || '' } : i)));
     } catch (err) {
-      if (selected) setDetailError(err.message);
-      else setPageError(err.message);
+      setPageError(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function handleDelete() {
     if (!confirmDelete) { setConfirmDelete(true); return; }
-    setDeleting(true);
+    setBusy(true);
     try {
       await invoicesAPI.remove(selected.id);
       setInvoices((prev) => prev.filter((i) => i.id !== selected.id));
       navigate('/invoices');
     } catch (err) {
-      setDetailError(err.message);
+      setPageError(err.message);
     } finally {
-      setDeleting(false);
+      setBusy(false);
     }
   }
 
-  const selectedOverdue = selected && isOverdue(selected);
-  const linkedProject = projects.find((p) => p.id === detailForm.project_id);
+  async function download(invoice) {
+    setDownloading(true);
+    try {
+      await downloadInvoicePdf(invoice, profile);
+    } catch (err) {
+      setPageError(err.message || 'Couldn’t create the PDF.');
+    } finally {
+      setDownloading(false);
+    }
+  }
 
+  const editorModal = (
+    <InvoiceEditor
+      open={Boolean(editor)}
+      onClose={() => setEditor(null)}
+      onSave={saveInvoice}
+      initial={editor?.initial}
+      clients={clients}
+      projects={projects}
+      invoices={invoices}
+      title={editor?.mode === 'edit' ? `Edit ${selected?.number || 'invoice'}` : 'New invoice'}
+      saveLabel={editor?.mode === 'edit' ? 'Save changes' : 'Create invoice'}
+    />
+  );
+
+  const setupMissing = loaded && !profile.business_name && !profile.logo && !profile.address;
+
+  /* ── One invoice ─────────────────────────────────────────── */
+  if (routeInvoiceId) {
+    if (!selected) {
+      return (
+        <>
+          <div className="topbar"><nav className="tb-crumb"><Link to="/invoices"><Icon name="back" size={16} />Invoices</Link></nav></div>
+          <div className="content"><div className="page panel empty" style={{ padding: 40 }}>{loaded ? <>This invoice doesn’t exist any more. <Link to="/invoices">Back to invoices</Link></> : 'Loading…'}</div></div>
+        </>
+      );
+    }
+    const overdue = isOverdue(selected);
+    const paid = selected.status === 'paid';
+    const project = projects.find((p) => p.id === selected.project_id);
+    const payLink = selected.payment_link || profile.payment_link;
+    const howToPay = [
+      stripe && profile.card_payments ? 'Card payment with Stripe (marked paid by itself)' : '',
+      payLink ? 'Payment link' : '',
+      profile.bank_details ? 'Bank transfer' : '',
+    ].filter(Boolean);
+    return (
+      <>
+        <div className="topbar">
+          <nav className="tb-crumb" aria-label="Breadcrumb"><Link to="/invoices"><Icon name="back" size={16} />Invoices</Link></nav>
+          <div className="tb-r">
+            <button className="btn bq" type="button" disabled={busy} onClick={handleDelete}>{confirmDelete ? 'Yes, delete it' : 'Delete'}</button>
+            {confirmDelete && <button className="btn bq" type="button" onClick={() => setConfirmDelete(false)}>Keep</button>}
+            <button className="btn bg" type="button" onClick={() => setEditor({ mode: 'edit', initial: invoiceToForm(selected) })}><Icon name="edit" />Edit</button>
+            <button className="btn bg" type="button" disabled={downloading} onClick={() => download(selected)}><Icon name="download" />{downloading ? 'Preparing…' : 'Download PDF'}</button>
+            <button className={`btn ${paid ? 'bg' : 'bp'}`} type="button" disabled={busy} onClick={() => toggleStatus(selected)}><Icon name="check" />{paid ? 'Mark as unpaid' : 'Mark as paid'}</button>
+          </div>
+        </div>
+        <div className="content">
+          <div className="page">
+            {pageError && <div className="form-error">{pageError}</div>}
+            {confirmDelete && <div className="form-error">Deleting this invoice can’t be undone. Your client won’t see it any more.</div>}
+            <header className="review-head" style={{ marginBottom: 22 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="muted" style={{ fontSize: 13.5 }}>{selected.number ? `${selected.number}, ` : ''}{selected.client_name}</div>
+                <h1 className="h-display">{money(selected.amount, cur(selected))}</h1>
+                <div className="muted" style={{ fontSize: 13.5, marginTop: 4 }}>
+                  {paid
+                    ? `Paid ${formatDate(selected.paid_at, longDate) || ''}${selected.payment_method && selected.payment_method !== 'Marked paid' ? ` by ${selected.payment_method}` : ''}`
+                    : selected.due_date ? <span style={{ color: overdue ? 'var(--err)' : undefined }}>Due {relativeDay(selected.due_date)}{overdue ? ', overdue' : ''}</span> : 'No due date'}
+                  {project ? `, for ${project.service} (${stageLabel(project)})` : ''}
+                </div>
+              </div>
+              <Pill status={overdue ? 'overdue' : selected.status} />
+            </header>
+            <div className="inv-split">
+              <InvoiceDocument invoice={selected} profile={profile} />
+              <aside className="panel" aria-label="How the client pays">
+                <div className="aside-block">
+                  <h2 className="card-title" style={{ marginBottom: 6 }}>How {selected.client_name || 'the client'} can pay</h2>
+                  {howToPay.length
+                    ? <ul className="plain-list">{howToPay.map((h) => <li key={h}><Icon name="check" size={14} /> {h}</li>)}</ul>
+                    : <p className="muted" style={{ fontSize: 13.5 }}>No payment options yet.</p>}
+                  <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>They see this invoice, a Pay button and the PDF in their portal.</p>
+                </div>
+                <div className="aside-block">
+                  <h2 className="card-title" style={{ marginBottom: 6 }}>Your details</h2>
+                  <p className="muted" style={{ fontSize: 13 }}>Logo, address, VAT number and bank details come from <Link to="/settings">Settings</Link>.</p>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+        {editorModal}
+      </>
+    );
+  }
+
+  /* ── All invoices ───────────────────────────────────────── */
   return (
     <>
       <div className="topbar">
@@ -221,12 +255,18 @@ export default function Invoices() {
               </button>
             ))}
           </div>
-          <button className="btn bp" type="button" onClick={openCreate}><Icon name="plus" />New invoice</button>
+          <button className="btn bp" type="button" onClick={openCreate} disabled={!clients.length}><Icon name="plus" />New invoice</button>
         </div>
       </div>
       <div className="content">
         <div className="page">
           {pageError && <div className="form-error">{pageError}</div>}
+          {setupMissing && (
+            <div className="locked-note" style={{ marginBottom: 20 }}>
+              <Icon name="receipt" size={16} />
+              <span>Add your logo, address, VAT and bank details so they appear on your invoices. <Link to="/settings">Set up invoices</Link></span>
+            </div>
+          )}
 
           <div className="figures" style={{ marginBottom: 24 }}>
             <div className="figure"><div className="figure-val">{formatMoney(totals.unpaid, currency)}</div><div className="figure-label">Waiting to be paid</div></div>
@@ -241,7 +281,7 @@ export default function Invoices() {
             {rows.length ? (
               <table className="tbl">
                 <thead>
-                  <tr><th>Client</th><th className="hide-sm">For</th><th className="r">Amount</th><th>Due</th><th>Status</th><th className="r"><span className="sr-only">Actions</span></th></tr>
+                  <tr><th>Client</th><th className="hide-sm">Number</th><th className="hide-sm">For</th><th className="r">Total</th><th>Due</th><th>Status</th><th className="r"><span className="sr-only">Actions</span></th></tr>
                 </thead>
                 <tbody>
                   {rows.map((inv) => {
@@ -254,8 +294,9 @@ export default function Invoices() {
                             <span style={{ fontWeight: 500 }}>{inv.client_name || 'Unknown client'}</span>
                           </div>
                         </td>
+                        <td className="hide-sm muted num">{inv.number || '—'}</td>
                         <td className="hide-sm muted">{inv.description || '—'}</td>
-                        <td className="r num" style={{ fontWeight: 500 }}>{formatMoney(inv.amount, currency)}</td>
+                        <td className="r num" style={{ fontWeight: 500 }}>{money(inv.amount, cur(inv))}</td>
                         <td style={{ color: overdue ? 'var(--err)' : 'var(--text-2)', whiteSpace: 'nowrap' }}>
                           {inv.due_date ? (inv.status === 'paid' ? formatDate(inv.due_date) : relativeDay(inv.due_date)) : '—'}
                         </td>
@@ -284,61 +325,7 @@ export default function Invoices() {
           </div>
         </div>
       </div>
-
-      <Modal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="New invoice"
-        footer={
-          <>
-            <button className="btn bg" type="button" onClick={() => setCreateOpen(false)}>Cancel</button>
-            <button className="btn bp" type="submit" form="invoice-create" disabled={savingCreate || !clients.length}>{savingCreate ? 'Creating…' : 'Create invoice'}</button>
-          </>
-        }
-      >
-        {clients.length
-          ? <InvoiceFields id="invoice-create" value={createForm} onChange={setCreateForm} onSubmit={handleCreate} clients={clients} projects={projects} error={createError} />
-          : <div className="empty" style={{ padding: 0 }}>Invoices belong to a client. <Link to="/clients?new=1">Add your first client</Link> first.</div>}
-      </Modal>
-
-      <Modal
-        open={Boolean(selected)}
-        onClose={() => navigate('/invoices')}
-        title={selected ? `Invoice for ${selected.client_name || 'client'}` : 'Invoice'}
-        footer={
-          <>
-            <button className="btn bd spacer" type="button" onClick={handleDelete} disabled={deleting}>
-              {deleting ? 'Deleting…' : confirmDelete ? 'Yes, delete invoice' : 'Delete'}
-            </button>
-            {confirmDelete && <button className="btn bq" type="button" onClick={() => setConfirmDelete(false)}>Keep it</button>}
-            <button className="btn bg" type="button" onClick={() => navigate('/invoices')}>Close</button>
-            <button className="btn bp" type="submit" form="invoice-edit" disabled={savingDetail}>{savingDetail ? 'Saving…' : 'Save changes'}</button>
-          </>
-        }
-      >
-        {selected && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
-              <div>
-                <div className="figure-val" style={{ fontSize: 34 }}>{formatMoney(detailForm.amount, currency)}</div>
-                <div className="muted" style={{ fontSize: 13.5, marginTop: 4 }}>
-                  {detailForm.status === 'paid'
-                    ? 'Paid'
-                    : detailForm.due_date
-                      ? <span style={{ color: selectedOverdue ? 'var(--err)' : undefined }}>Due {relativeDay(detailForm.due_date)}{selectedOverdue ? ', overdue' : ''}</span>
-                      : 'No due date set'}
-                  {linkedProject ? `, for ${linkedProject.service} (${stageLabel(linkedProject)})` : ''}
-                </div>
-              </div>
-              <button className={`btn ${detailForm.status === 'paid' ? 'bg' : 'bp'}`} type="button" onClick={() => toggleStatus(selected)}>
-                <Icon name="check" />{detailForm.status === 'paid' ? 'Mark as unpaid' : 'Mark as paid'}
-              </button>
-            </div>
-            {confirmDelete && <div className="form-error">Deleting this invoice can’t be undone.</div>}
-            <InvoiceFields id="invoice-edit" value={detailForm} onChange={setDetailForm} onSubmit={handleUpdate} clients={clients} projects={projects} error={detailError} />
-          </>
-        )}
-      </Modal>
+      {editorModal}
     </>
   );
 }

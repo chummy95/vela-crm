@@ -197,6 +197,19 @@ service cloud.firestore {
       }
     }
 
+    // Business details and invoice settings. A studio's clients can read them so their
+    // invoices show the studio's logo, address and payment options.
+    match /studio_profiles/{uid} {
+      allow get: if isOwner(uid) || (isClient() && currentUserData().studio_owner_id == uid);
+      allow list: if false;
+      allow create, update: if isStudio()
+        && request.auth.uid == uid
+        && request.resource.data.user_id == uid
+        && (!('logo' in request.resource.data)
+          || (request.resource.data.logo is string && request.resource.data.logo.size() < 300000));
+      allow delete: if isStudio() && request.auth.uid == uid;
+    }
+
     match /form_configs/{userId} {
       allow get: if true;
       allow list: if false;

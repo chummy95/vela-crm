@@ -148,6 +148,12 @@ export default function Projects() {
     setViewStage(null);
   }, [routeProjectId]);
 
+  useEffect(() => {
+    const onPaid = (e) => setInvoices((prev) => prev.map((i) => (i.id === e.detail.id ? { ...i, ...e.detail.changes } : i)));
+    window.addEventListener('vela:invoice-paid', onPaid);
+    return () => window.removeEventListener('vela:invoice-paid', onPaid);
+  }, []);
+
   const visible = useMemo(() => {
     const rows = projects.filter((p) => (filter === 'all' ? true : filter === 'done' ? isDone(p) : !isDone(p)));
     return rows;
