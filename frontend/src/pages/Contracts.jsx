@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useStudioProfile } from '../hooks/useStudioProfile';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Modal from '../components/Modal';
 import Pill from '../components/Pill';
@@ -36,6 +37,7 @@ function Field({ id, label, children }) {
 }
 
 export default function Contracts() {
+  const brand = useStudioProfile();
   const navigate = useNavigate();
   const params = useParams();
   const routeId = (params['*'] || '').split('/')[0] || '';
@@ -253,7 +255,7 @@ export default function Contracts() {
                 </div>
               </form>
 
-              <ContractDocument contract={form} studioName={user?.studio_name} currency={currency} />
+              <ContractDocument contract={form} studioName={user?.studio_name} currency={currency} brand={brand} />
             </div>
           </div>
         </div>

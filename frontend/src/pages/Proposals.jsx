@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useStudioProfile } from '../hooks/useStudioProfile';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Modal from '../components/Modal';
 import Pill from '../components/Pill';
@@ -55,6 +56,7 @@ function Field({ id, label, hint, children }) {
 }
 
 export default function Proposals() {
+  const brand = useStudioProfile();
   const navigate = useNavigate();
   const params = useParams();
   const routeId = (params['*'] || '').split('/')[0] || '';
@@ -251,7 +253,7 @@ export default function Proposals() {
                 </div>
               </form>
 
-              <ProposalDocument proposal={form} studioName={user?.studio_name} currency={currency} emptyHint="Fill in the details on the left and the proposal takes shape here." />
+              <ProposalDocument proposal={form} studioName={user?.studio_name} currency={currency} brand={brand} emptyHint="Fill in the details on the left and the proposal takes shape here." />
             </div>
           </div>
         </div>

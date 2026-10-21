@@ -1,6 +1,7 @@
 import React from 'react';
 import { invoiceTotals, money } from '../utils/invoices';
 import { formatDate } from '../utils/format';
+import { brandVars, useBrandFonts } from '../utils/brand';
 
 const longDate = { day: 'numeric', month: 'long', year: 'numeric' };
 const lines = (value) => String(value || '').split('\n').map((x) => x.trim()).filter(Boolean);
@@ -13,9 +14,10 @@ export default function InvoiceDocument({ invoice, profile = {} }) {
   const billTo = invoice.bill_to || { name: invoice.client_name };
   const paid = invoice.status === 'paid';
   const notes = invoice.notes || profile.invoice_notes;
+  useBrandFonts(profile);
 
   return (
-    <article className="inv-doc" aria-label={invoice.number ? `Invoice ${invoice.number}` : 'Invoice'}>
+    <article className="inv-doc" style={brandVars(profile)} aria-label={invoice.number ? `Invoice ${invoice.number}` : 'Invoice'}>
       {paid && <div className="inv-paid" aria-label="Paid">Paid</div>}
       <header className="inv-head">
         <div className="inv-brand">

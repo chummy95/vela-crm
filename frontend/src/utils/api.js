@@ -21,6 +21,7 @@ import {
 import { auth, createSecondaryFirebaseServices, db, ensureFirebaseConfigured } from '../lib/firebase';
 import { sanitizeWorkflow, workflowLabels } from './workflow';
 import { DEFAULT_STUDIO_PROFILE, formatInvoiceNumber, invoiceTotals, toNumber } from './invoices';
+import { CUSTOM, DEFAULT_BRAND, fontOption, isHex } from './brand';
 
 export const USER_ROLES = {
   STUDIO: 'studio',
@@ -667,23 +668,48 @@ function cleanPaymentLink(value) {
   }
 }
 
-// The studio's business details, logo and invoice settings. Clients can read their studio's profile
-// so invoices show the right branding in the portal.
+const FONT_ROLES = ['heading', 'body'];
+const profileCache = new Map(); // owner uid -> { at, promise }
+const fontDataCache = new Map(); // `${owner}_${role}` -> data URL as last read or saved
+
+async function readBrandFont(owner, role) {
+  const snapshot = await getDoc(doc(db, 'studio_fonts', `${owner}_${role}`));
+  const data = snapshot.exists() ? snapshot.data() : null;
+  fontDataCache.set(`${owner}_${role}`, data?.data || '');
+  return data;
+}
+
+// The studio's business details, brand kit (logo, colours, fonts) and invoice settings.
+// Clients can read their studio's profile so documents show the studio's branding.
 export const studioProfileAPI = {
-  async get(uid) {
+  async get(uid, { fresh = false } = {}) {
     const session = await requireSession();
     const owner = uid || (isStudioProfile(session.profile) ? session.firebaseUser.uid : session.profile.studio_owner_id);
-    if (!owner) return { ...DEFAULT_STUDIO_PROFILE };
-    const snapshot = await getDoc(doc(db, 'studio_profiles', owner));
-    const data = snapshot.exists() ? snapshot.data() : {};
-    return {
-      ...DEFAULT_STUDIO_PROFILE,
-      business_name: session.profile.studio_name || '',
-      email: isStudioProfile(session.profile) ? session.firebaseUser.email || '' : '',
-      currency: session.profile.currency || 'GBP',
-      ...data,
-      id: owner,
-    };
+    if (!owner) return { ...DEFAULT_STUDIO_PROFILE, ...DEFAULT_BRAND };
+    const cached = profileCache.get(owner);
+    if (!fresh && cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.promise;
+    const promise = (async () => {
+      const snapshot = await getDoc(doc(db, 'studio_profiles', owner));
+      const data = snapshot.exists() ? snapshot.data() : {};
+      const profile = {
+        ...DEFAULT_STUDIO_PROFILE,
+        ...DEFAULT_BRAND,
+        business_name: session.profile.studio_name || '',
+        email: isStudioProfile(session.profile) ? session.firebaseUser.email || '' : '',
+        currency: session.profile.currency || 'GBP',
+        ...data,
+        id: owner,
+      };
+      await Promise.all(FONT_ROLES.map(async (role) => {
+        if (profile[`${role}_font`] !== CUSTOM) return;
+        const font = await readBrandFont(owner, role).catch(() => null);
+        profile[`${role}_font_data`] = font?.data || '';
+      }));
+      return profile;
+    })();
+    profileCache.set(owner, { at: Date.now(), promise });
+    promise.catch(() => profileCache.delete(owner));
+    return promise;
   },
 
   async save(body) {
@@ -701,6 +727,27 @@ export const studioProfileAPI = {
       if (logo.length > 290000) throw new Error('That logo is too large.');
       payload.logo = logo;
     }
+    ['brand_primary', 'brand_accent'].forEach((key) => {
+      if (body[key] === undefined) return;
+      if (!isHex(body[key])) throw new Error('Brand colours need to be hex codes like #1B2B4B.');
+      payload[key] = String(body[key]).toUpperCase();
+    });
+    for (const role of FONT_ROLES) {
+      const choice = body[`${role}_font`];
+      if (choice === undefined) continue;
+      if (choice !== '' && choice !== CUSTOM && !fontOption(choice)) throw new Error('Choose a font from the list.');
+      payload[`${role}_font`] = choice;
+      payload[`${role}_font_name`] = text(body[`${role}_font_name`]).slice(0, 80);
+      const data = String(body[`${role}_font_data`] || '');
+      if (choice === CUSTOM) {
+        if (!/^data:font\/(ttf|otf|woff2?);base64,/.test(data)) throw new Error('Upload a font file for your own font.');
+        if (data.length > 850000) throw new Error('That font file is too large.');
+        if (fontDataCache.get(`${uid}_${role}`) !== data) {
+          await setDoc(doc(db, 'studio_fonts', `${uid}_${role}`), { user_id: uid, role, name: payload[`${role}_font_name`], data, updated_at: now() });
+          fontDataCache.set(`${uid}_${role}`, data);
+        }
+      }
+    }
     if (body.vat_rate !== undefined) payload.vat_rate = String(Math.max(0, Math.min(100, toNumber(body.vat_rate))));
     if (body.payment_terms_days !== undefined) payload.payment_terms_days = Math.max(0, Math.min(365, Math.round(toNumber(body.payment_terms_days))));
     if (body.next_invoice_number !== undefined) payload.next_invoice_number = Math.max(1, Math.round(toNumber(body.next_invoice_number)) || 1);
@@ -710,7 +757,7 @@ export const studioProfileAPI = {
       const profileChanges = stripUndefinedValues({ currency: payload.currency || undefined, studio_name: payload.business_name || undefined });
       if (Object.keys(profileChanges).length) await updateDoc(doc(db, 'users', uid), profileChanges);
     }
-    return this.get(uid);
+    return this.get(uid, { fresh: true });
   },
 };
 
@@ -774,7 +821,7 @@ export const invoicesAPI = {
       throw new Error('Choose a client for this invoice.');
     }
     const client = await getStudioClient(body.client_id, session);
-    const profile = await studioProfileAPI.get(session.firebaseUser.uid);
+    const profile = await studioProfileAPI.get(session.firebaseUser.uid, { fresh: true });
     const fields = invoiceFields({
       vat_rate: profile.vat_rate,
       vat_label: profile.vat_label,
@@ -801,6 +848,7 @@ export const invoicesAPI = {
     };
     const reference = await addDoc(collection(db, 'invoices'), payload);
     await setDoc(doc(db, 'studio_profiles', session.firebaseUser.uid), { user_id: session.firebaseUser.uid, next_invoice_number: counter + 1 }, { merge: true });
+    profileCache.delete(session.firebaseUser.uid);
     return { id: reference.id, ...payload };
   },
 

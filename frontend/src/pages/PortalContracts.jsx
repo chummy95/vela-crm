@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useStudioProfile } from '../hooks/useStudioProfile';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Icon from '../components/Icon';
 import Pill from '../components/Pill';
@@ -7,6 +8,7 @@ import { contractsAPI } from '../utils/api';
 import { formatDate, formatMoney } from '../utils/format';
 
 export default function PortalContracts() {
+  const brand = useStudioProfile();
   const navigate = useNavigate();
   const params = useParams();
   const routeId = (params['*'] || '').split('/')[0] || '';
@@ -29,7 +31,7 @@ export default function PortalContracts() {
         </div>
         <div className="content">
           <div className="page" style={{ maxWidth: 820 }}>
-            {selected ? <ContractDocument contract={selected} /> : <div className="panel empty" style={{ padding: 40 }}>{loaded ? 'This contract isn’t available.' : 'Loading…'}</div>}
+            {selected ? <ContractDocument contract={selected} brand={brand} /> : <div className="panel empty" style={{ padding: 40 }}>{loaded ? 'This contract isn’t available.' : 'Loading…'}</div>}
           </div>
         </div>
       </>
