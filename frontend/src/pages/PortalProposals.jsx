@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useStudioProfile } from '../hooks/useStudioProfile';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Icon from '../components/Icon';
 import Pill from '../components/Pill';
@@ -7,6 +8,7 @@ import { proposalsAPI } from '../utils/api';
 import { formatDate, formatMoney } from '../utils/format';
 
 export default function PortalProposals() {
+  const brand = useStudioProfile();
   const navigate = useNavigate();
   const params = useParams();
   const routeId = (params['*'] || '').split('/')[0] || '';
@@ -30,7 +32,7 @@ export default function PortalProposals() {
         </div>
         <div className="content">
           <div className="page" style={{ maxWidth: 820 }}>
-            {selected ? <ProposalDocument proposal={selected} /> : <div className="panel empty" style={{ padding: 40 }}>{loaded ? 'This proposal isn’t available.' : 'Loading…'}</div>}
+            {selected ? <ProposalDocument proposal={selected} brand={brand} /> : <div className="panel empty" style={{ padding: 40 }}>{loaded ? 'This proposal isn’t available.' : 'Loading…'}</div>}
           </div>
         </div>
       </>

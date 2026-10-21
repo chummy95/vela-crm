@@ -222,6 +222,10 @@ const studioProfile = {
   invoice_notes: 'Thank you for your business. Payment is due within 14 days.',
   payment_link: 'https://buy.stripe.com/test_example',
   card_payments: true,
+  brand_primary: '#2E3A2F',
+  brand_accent: '#B07A4A',
+  heading_font: 'Cormorant Garamond',
+  body_font: 'DM Sans',
 };
 
 export const studioProfileAPI = {

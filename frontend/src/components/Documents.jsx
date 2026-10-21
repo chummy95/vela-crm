@@ -1,6 +1,7 @@
 import React from 'react';
 import { DEFAULT_CLAUSES } from '../utils/constants';
 import { formatDate, formatMoney } from '../utils/format';
+import { brandVars, useBrandFonts } from '../utils/brand';
 
 const longDate = { day: 'numeric', month: 'long', year: 'numeric' };
 
@@ -10,16 +11,19 @@ function list(value) {
 }
 
 // A proposal laid out as the document the client reads. Used in the studio editor and the client portal.
-export function ProposalDocument({ proposal, studioName, currency = 'GBP', emptyHint }) {
+export function ProposalDocument({ proposal, studioName, currency = 'GBP', emptyHint, brand = {} }) {
+  useBrandFonts(brand);
+  const by = brand.business_name || studioName;
   const packages = list(proposal.packages);
   const deliverables = list(proposal.deliverables);
   const timeline = list(proposal.timeline);
   const isEmpty = !proposal.intro && !proposal.overview && !packages.length && !deliverables.length;
   return (
-    <article className="doc-preview" aria-label="Proposal">
+    <article className="doc-preview" aria-label="Proposal" style={brandVars(brand)}>
+      {brand.logo && <img className="doc-logo" src={brand.logo} alt={by || 'Studio logo'} />}
       <div className="doc-kicker">Proposal{proposal.date ? `, ${formatDate(proposal.date, longDate)}` : ''}</div>
       <h2 className="doc-title">{proposal.service || 'Untitled proposal'}</h2>
-      <div className="doc-for">Prepared for {proposal.client_name || 'you'}{studioName ? ` by ${studioName}` : ''}</div>
+      <div className="doc-for">Prepared for {proposal.client_name || 'you'}{by ? ` by ${by}` : ''}</div>
       {proposal.intro && <p className="doc-lead">{proposal.intro}</p>}
       {proposal.overview && <><h3>Overview</h3><p>{proposal.overview}</p></>}
       {packages.length > 0 && <><h3>Packages</h3><ul>{packages.map((x) => <li key={x}>{x}</li>)}</ul></>}
@@ -40,14 +44,17 @@ export function clauseText(clause, contract, currency = 'GBP') {
 }
 
 // A contract laid out as a signed-or-unsigned agreement.
-export function ContractDocument({ contract, studioName, currency = 'GBP' }) {
+export function ContractDocument({ contract, studioName: nameProp, currency = 'GBP', brand = {} }) {
+  useBrandFonts(brand);
+  const studioName = brand.business_name || nameProp;
   const clauses = Array.isArray(contract.clauses) && contract.clauses.length ? contract.clauses : DEFAULT_CLAUSES;
   const terms = [
     contract.start_date ? `Starting ${formatDate(contract.start_date, longDate)}` : '',
     contract.duration ? `for ${contract.duration}` : '',
   ].filter(Boolean).join(', ');
   return (
-    <article className="doc-preview" aria-label="Contract">
+    <article className="doc-preview" aria-label="Contract" style={brandVars(brand)}>
+      {brand.logo && <img className="doc-logo" src={brand.logo} alt={studioName || 'Studio logo'} />}
       <div className="doc-kicker">Services agreement{contract.date ? `, ${formatDate(contract.date, longDate)}` : ''}</div>
       <h2 className="doc-title">{contract.service || 'Untitled contract'}</h2>
       <div className="doc-for">

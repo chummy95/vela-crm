@@ -210,6 +210,19 @@ service cloud.firestore {
       allow delete: if isStudio() && request.auth.uid == uid;
     }
 
+    // A studio's own brand fonts (uploaded font files), one document per role.
+    match /studio_fonts/{fontId} {
+      allow get: if (isStudio() && resource.data.user_id == request.auth.uid)
+        || (isClient() && resource.data.user_id == currentUserData().studio_owner_id);
+      allow list: if false;
+      allow create, update: if isStudio()
+        && request.resource.data.user_id == request.auth.uid
+        && fontId in [request.auth.uid + '_heading', request.auth.uid + '_body']
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 900000;
+      allow delete: if isStudio() && resource.data.user_id == request.auth.uid;
+    }
+
     match /form_configs/{userId} {
       allow get: if true;
       allow list: if false;
