@@ -3,6 +3,7 @@
 import { brandStrategyStarter, projectFeedbackStarter } from '../utils/questionnaires';
 import { sanitizeWorkflow } from '../utils/workflow';
 import { DEFAULT_STUDIO_PROFILE, formatInvoiceNumber, invoiceTotals } from '../utils/invoices';
+import { DESIGN_CONTRACT_TEMPLATE } from '../utils/contractTemplate';
 
 export const USER_ROLES = { STUDIO: 'studio', CLIENT: 'client' };
 export function normalizeRole(value) {
@@ -45,7 +46,7 @@ const db = {
     { id: 'pp2', client_id: 'c4', client_name: 'Lumen Skin', service: 'Packaging Design', date: day(-14), value: '3900', template: 'A', primary_color: '#1B2B4B', accent_color: '#C9A84C', intro: '', overview: '', packages: [], deliverables: ['3 SKUs', 'Print-ready files'], timeline: [], terms: '', process: '', status: 'approved', created_at: iso(day(-14)) },
   ],
   contracts: [
-    { id: 'ct3', client_id: 'c1', client_name: 'Maison Noor', client_email: 'layla@maisonnoor.co', client_address: 'King Fahd Road, Riyadh', service: 'Packaging Design', value: '3600', start_date: day(7), duration: '6 weeks', date: day(-1), primary_color: '#1B2B4B', accent_color: '#C9A84C', clauses: [], signed: false, created_at: iso(day(-1)) },
+    { id: 'ct3', client_id: 'c1', client_name: 'Maison Noor', client_contact: 'Layla Haddad', client_email: 'layla@maisonnoor.co', client_address: 'Riyadh, Saudi Arabia', service: 'Packaging design for the Maison Noor fragrance range', value: '3600', start_date: day(7), end_date: day(49), duration: '6 weeks', date: day(-1), primary_color: '#1B2B4B', accent_color: '#C9A84C', clauses: DESIGN_CONTRACT_TEMPLATE, signed: false, created_at: iso(day(-1)) },
     { id: 'ct0', client_id: 'c1', client_name: 'Maison Noor', client_email: 'layla@maisonnoor.co', service: 'Brand Identity', value: '4800', start_date: day(-34), duration: '8 weeks', date: day(-36), primary_color: '#1B2B4B', accent_color: '#C9A84C', clauses: [], signed: true, created_at: iso(day(-36)) },
     { id: 'ct1', client_id: 'c4', client_name: 'Lumen Skin', client_email: 'priya@lumenskin.com', service: 'Packaging Design', value: '3900', start_date: day(-9), duration: '6 weeks', date: day(-11), primary_color: '#1B2B4B', accent_color: '#C9A84C', clauses: [], signed: true, created_at: iso(day(-11)) },
     { id: 'ct2', client_id: 'c5', client_name: 'Kettle House', client_email: 'james@kettlehouse.co.uk', service: 'Brand Identity', value: '4500', start_date: day(10), duration: '8 weeks', date: day(-1), primary_color: '#1B2B4B', accent_color: '#C9A84C', clauses: [], signed: false, created_at: iso(day(-1)) },
@@ -213,6 +214,8 @@ export const projectsAPI = {
 const studioProfile = {
   ...DEFAULT_STUDIO_PROFILE,
   business_name: 'Creative Mayaa Studio',
+  legal_name: 'Mayaa',
+  phone: '+44 20 7946 0000',
   address: '71-75 Shelton Street\nLondon WC2H 9JQ\nUnited Kingdom',
   email: 'hello@creativemayaa.studio',
   website: 'creativemayaa.studio',

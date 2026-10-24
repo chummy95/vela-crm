@@ -12,7 +12,7 @@ import { AGREEMENT_TEXT, contractFingerprint, signedLabel } from '../utils/contr
 import { downloadContractPdf } from '../utils/contractPdf';
 
 // Accept and sign: agree to the terms, add your name and signature.
-function SignPanel({ contract, onSigned }) {
+function SignPanel({ contract, brand, onSigned }) {
   const { user } = useAuth();
   const [agree, setAgree] = useState(false);
   const [name, setName] = useState(user?.name || '');
@@ -28,7 +28,7 @@ function SignPanel({ contract, onSigned }) {
     setSaving(true);
     setError('');
     try {
-      const fingerprint = await contractFingerprint(contract);
+      const fingerprint = await contractFingerprint(contract, brand, brand.currency);
       const updated = await contractsAPI.signAsClient(contract.id, { name, title, image: signature.image, method: signature.method, fingerprint, agreement: AGREEMENT_TEXT });
       onSigned(updated);
     } catch (err) {
@@ -113,6 +113,7 @@ export default function PortalContracts() {
             {selected && !selected.signed && (
               <SignPanel
                 contract={selected}
+                brand={brand}
                 onSigned={(updated) => {
                   setContracts((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)));
                   setJustSigned(true);

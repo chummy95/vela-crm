@@ -28,7 +28,8 @@ export const STATUS_COLORS = {
 export const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 export const DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-export const DEFAULT_CLAUSES = [
+// Vela's original short clauses. Older contracts saved without clauses still show these.
+export const LEGACY_CLAUSES = [
   { id: 'c1', title: 'Scope of Work',       body: 'The Studio agrees to provide __SERVICE__ services for the Client as detailed in the associated proposal.' },
   { id: 'c2', title: 'Payment Terms',       body: 'The total project value is __VALUE__. A non-refundable deposit of 50% is required before work commences. The balance is due upon final delivery.' },
   { id: 'c3', title: 'Intellectual Property', body: 'Upon receipt of full payment, all IP rights transfer exclusively to the Client. The Studio retains portfolio display rights.' },
@@ -37,3 +38,6 @@ export const DEFAULT_CLAUSES = [
   { id: 'c6', title: 'Confidentiality',     body: 'Both parties agree to keep all shared information confidential.' },
   { id: 'c7', title: 'Governing Law',       body: 'This agreement is governed by the laws of England and Wales.' },
 ];
+
+// New contracts start from the studio's own template, or this one.
+export { DESIGN_CONTRACT_TEMPLATE as DEFAULT_CLAUSES } from './contractTemplate';

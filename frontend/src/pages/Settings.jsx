@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
 import InvoiceDocument from '../components/InvoiceDocument';
 import { paymentsAPI, studioProfileAPI } from '../utils/api';
@@ -188,6 +189,7 @@ export default function Settings() {
               <section className="panel settings-sec" aria-labelledby="s-biz">
                 <h2 id="s-biz" className="card-title">Business details</h2>
                 <p className="muted settings-lede">Shown on your invoices and in the client portal.</p>
+                <Field id="st-legal" label="Your full name" hint="(as it appears on contracts)"><input id="st-legal" className="fi" value={form.legal_name || ''} onChange={set('legal_name')} placeholder="Your legal name" /></Field>
                 <Field id="st-name" label="Business name"><input id="st-name" className="fi" value={form.business_name} onChange={set('business_name')} placeholder="Creative Mayaa Studio" /></Field>
                 <Field id="st-address" label="Address"><textarea id="st-address" className="fi" rows={3} value={form.address} onChange={set('address')} placeholder={'Street\nCity, postcode\nCountry'} /></Field>
                 <div className="fi-row">
@@ -219,6 +221,12 @@ export default function Settings() {
                 </div>
                 <Field id="st-bank" label="Bank details" hint="(for bank transfers)"><textarea id="st-bank" className="fi" rows={3} value={form.bank_details} onChange={set('bank_details')} placeholder={'Account name\nIBAN or sort code and account number\nBank'} /></Field>
                 <Field id="st-notes" label="Note on every invoice" hint="(optional)"><textarea id="st-notes" className="fi" rows={2} value={form.invoice_notes} onChange={set('invoice_notes')} placeholder="Thank you for your business." /></Field>
+              </section>
+
+              <section className="panel settings-sec" aria-labelledby="s-ct">
+                <h2 id="s-ct" className="card-title">Contract template</h2>
+                <p className="muted settings-lede">The sections every new contract starts with. Your name, address, email and phone above fill in the Parties section.</p>
+                <p style={{ marginBottom: 16 }}><Link className="btn bg bsm" to="/contracts/template"><Icon name="edit" size={15} />Edit contract template</Link></p>
               </section>
 
               <section className="panel settings-sec" aria-labelledby="s-pay">

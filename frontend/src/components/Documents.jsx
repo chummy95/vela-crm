@@ -1,8 +1,8 @@
 import React from 'react';
-import { DEFAULT_CLAUSES } from '../utils/constants';
 import { formatDate, formatMoney } from '../utils/format';
 import { brandVars, useBrandFonts } from '../utils/brand';
-import { AGREEMENT_TEXT } from '../utils/contracts';
+import { AGREEMENT_TEXT, contractClauses } from '../utils/contracts';
+import { fillClause, inlineRuns, parseClause, placeholderValues, plainText } from '../utils/contractTemplate';
 
 const longDate = { day: 'numeric', month: 'long', year: 'numeric' };
 
@@ -38,47 +38,58 @@ export function ProposalDocument({ proposal, studioName, currency = 'GBP', empty
   );
 }
 
-export function clauseText(clause, contract, currency = 'GBP') {
-  return String(clause.body || '')
-    .replace(/__SERVICE__/g, contract.service || 'the agreed service')
-    .replace(/__VALUE__/g, contract.value ? formatMoney(contract.value, currency) : 'the agreed value');
+// Clause text with placeholders filled in (plain text, for PDFs and older callers).
+export function clauseText(clause, contract, currency = 'GBP', brand = {}) {
+  return plainText(fillClause(clause.body, placeholderValues(contract, brand, currency)));
+}
+
+function Inline({ text }) {
+  return inlineRuns(text).map((run, i) => {
+    let node = run.text;
+    if (run.missing) node = <span key={i} className="ph-missing" title="Fill this in on the contract">{run.text}</span>;
+    else if (run.bold) node = <strong key={i}>{run.text}</strong>;
+    else node = <React.Fragment key={i}>{run.text}</React.Fragment>;
+    return run.bold && run.missing ? <strong key={i}>{node}</strong> : node;
+  });
+}
+
+function ClauseBody({ text }) {
+  return parseClause(text).map((block, i) => {
+    if (block.type === 'sub') return <h4 key={i} className="clause-sub"><Inline text={block.text} /></h4>;
+    if (block.type === 'list') return <ul key={i}>{block.items.map((item, j) => <li key={j}><Inline text={item} /></li>)}</ul>;
+    return <p key={i}>{block.lines.map((line, j) => <React.Fragment key={j}>{j > 0 && <br />}<Inline text={line} /></React.Fragment>)}</p>;
+  });
 }
 
 // A contract laid out as a signed-or-unsigned agreement.
-export function ContractDocument({ contract, studioName: nameProp, currency = 'GBP', brand = {} }) {
+export function ContractDocument({ contract, studioName: nameProp, currency: currencyProp, brand = {} }) {
   useBrandFonts(brand);
+  const currency = currencyProp || brand.currency || 'GBP';
   const studioName = brand.business_name || nameProp;
-  const clauses = Array.isArray(contract.clauses) && contract.clauses.length ? contract.clauses : DEFAULT_CLAUSES;
-  const terms = [
-    contract.start_date ? `Starting ${formatDate(contract.start_date, longDate)}` : '',
-    contract.duration ? `for ${contract.duration}` : '',
-  ].filter(Boolean).join(', ');
+  const clauses = contractClauses(contract);
+  const values = placeholderValues(contract, brand, currency);
   return (
-    <article className="doc-preview" aria-label="Contract" style={brandVars(brand)}>
+    <article className="doc-preview contract-doc" aria-label="Contract" style={brandVars(brand)}>
       {brand.logo && <img className="doc-logo" src={brand.logo} alt={studioName || 'Studio logo'} />}
-      <div className="doc-kicker">Services agreement{contract.date ? `, ${formatDate(contract.date, longDate)}` : ''}</div>
+      <div className="doc-kicker">Design services contract{contract.date ? `, ${formatDate(contract.date, longDate)}` : ''}</div>
       <h2 className="doc-title">{contract.service || 'Untitled contract'}</h2>
       <div className="doc-for">
-        Between {studioName || 'the Studio'} and {contract.client_name || 'the Client'}{contract.client_address ? `, ${contract.client_address}` : ''}
+        Between {studioName || 'the Studio'} and {contract.client_name || 'the Client'}
       </div>
-      {(terms || contract.value) && (
-        <p className="doc-small" style={{ marginTop: 16 }}>
-          {terms}{terms && contract.value ? '. ' : ''}{contract.value ? `Total value ${formatMoney(contract.value, currency)}.` : ''}
-        </p>
-      )}
       {clauses.map((clause, index) => (
-        <section key={clause.id || index}>
-          <h3>{index + 1}. {clause.title}</h3>
-          <p>{clauseText(clause, contract, currency)}</p>
+        <section key={clause.id || index} className="clause">
+          <h3 className="clause-title">{index + 1}. {clause.title}</h3>
+          <div className="clause-body"><ClauseBody text={fillClause(clause.body, values)} /></div>
         </section>
       ))}
       <div className="doc-sign">
-        <SignatureBlock party={`For ${studioName || 'the Studio'}`} signature={contract.studio_signature} />
         <SignatureBlock
-          party={`For ${contract.client_name || 'the Client'}`}
+          party="Client’s signature"
+          who={contract.client_name}
           signature={contract.client_signature}
           note={contract.signed && !contract.client_signature ? 'Signed outside Vela' : ''}
         />
+        <SignatureBlock party="Designer’s signature" who={studioName} signature={contract.studio_signature} />
       </div>
       {contract.client_signature && (
         <div className="doc-audit" aria-label="Signature record">
@@ -98,15 +109,14 @@ function stamp(value) {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
 }
 
-function SignatureBlock({ party, signature, note }) {
+function SignatureBlock({ party, who, signature, note }) {
   return (
     <div>
+      <div className="sig-label">{party}</div>
       {signature?.image ? <img className="sig-img" src={signature.image} alt={`Signature of ${signature.name}`} /> : <div className="sig-blank" />}
       <div className="sig-line">
-        {signature ? <div className="sig-name">{signature.name}{signature.title ? `, ${signature.title}` : ''}</div> : null}
-        <div>{party}</div>
-        {signature && <div>{stamp(signature.signed_at)}</div>}
-        {!signature && note && <div>{note}</div>}
+        {signature ? <div className="sig-name">{signature.name}{signature.title ? `, ${signature.title}` : ''}</div> : who ? <div>{who}</div> : null}
+        <div>Date: {signature ? stamp(signature.signed_at) : note || ''}</div>
       </div>
     </div>
   );

@@ -7,8 +7,11 @@ import Icon from '../components/Icon';
 import ClientMark from '../components/ClientMark';
 import { ContractDocument } from '../components/Documents';
 import { useAuth } from '../hooks/useAuth';
-import { clientsAPI, contractsAPI } from '../utils/api';
+import { clientsAPI, contractsAPI, studioProfileAPI } from '../utils/api';
 import { DEFAULT_CLAUSES } from '../utils/constants';
+import ClauseEditor from '../components/ClauseEditor';
+import ContractTemplate from './ContractTemplate';
+import { contractClauses } from '../utils/contracts';
 import { formatDate, formatMoney } from '../utils/format';
 import SignaturePad from '../components/SignaturePad';
 import { signedLabel } from '../utils/contracts';
@@ -20,18 +23,23 @@ const FILTERS = [
   { key: 'all', label: 'All' },
 ];
 
-function blankContract(client) {
+function templateClauses(brand) {
+  return Array.isArray(brand?.contract_clauses) && brand.contract_clauses.length ? brand.contract_clauses : DEFAULT_CLAUSES;
+}
+
+function blankContract(client, brand) {
   return {
-    client_id: client?.id || '', client_name: client?.name || '', client_email: client?.email || '', client_address: '',
-    service: '', value: '', start_date: '', duration: '', date: new Date().toISOString().slice(0, 10), clauses: DEFAULT_CLAUSES,
+    client_id: client?.id || '', client_name: client?.name || '', client_email: client?.email || '', client_contact: client?.contact || '', client_address: '',
+    service: '', value: '', start_date: '', end_date: '', duration: '', date: new Date().toISOString().slice(0, 10), clauses: templateClauses(brand),
   };
 }
 
+
 function contractToForm(c) {
   return {
-    client_id: c.client_id || '', client_name: c.client_name || '', client_email: c.client_email || '', client_address: c.client_address || '',
-    service: c.service || '', value: c.value || '', start_date: c.start_date || '', duration: c.duration || '', date: c.date || '',
-    clauses: Array.isArray(c.clauses) && c.clauses.length ? c.clauses : DEFAULT_CLAUSES, signed: Boolean(c.signed),
+    client_id: c.client_id || '', client_name: c.client_name || '', client_email: c.client_email || '', client_contact: c.client_contact || '', client_address: c.client_address || '',
+    service: c.service || '', value: c.value || '', start_date: c.start_date || '', end_date: c.end_date || '', duration: c.duration || '', date: c.date || '',
+    clauses: contractClauses(c), signed: Boolean(c.signed),
   };
 }
 
@@ -113,21 +121,17 @@ export default function Contracts() {
     return (e) => { setForm((f) => ({ ...f, [key]: e.target.value })); setDirty(true); };
   }
 
-  function editClause(index, body) {
-    setForm((f) => ({ ...f, clauses: f.clauses.map((c, i) => (i === index ? { ...c, body } : c)) }));
-    setDirty(true);
-  }
-
   function pickClient(setter, markDirty) {
     return (e) => {
       const client = clients.find((c) => c.id === e.target.value);
-      setter((f) => ({ ...f, client_id: e.target.value, client_name: client?.name || '', client_email: client?.email || f.client_email }));
+      setter((f) => ({ ...f, client_id: e.target.value, client_name: client?.name || '', client_email: client?.email || f.client_email, client_contact: client?.contact || f.client_contact || '' }));
       if (markDirty) setDirty(true);
     };
   }
 
-  function openCreate() {
-    setCreateForm(blankContract(clients[0]));
+  async function openCreate() {
+    const latest = await studioProfileAPI.get().catch(() => brand);
+    setCreateForm(blankContract(clients[0], latest));
     setCreateError('');
     setCreateOpen(true);
   }
@@ -226,6 +230,9 @@ export default function Contracts() {
     }
   }
 
+  /* ── Contract template ─────────────────────────────────────── */
+  if (routeId === 'template') return <ContractTemplate />;
+
   /* ── Contract editor ──────────────────────────────────────── */
   if (routeId) {
     if (loaded && !selected) {
@@ -293,26 +300,25 @@ export default function Contracts() {
                     </select>
                   </Field>
                   <div className="fi-row">
+                    <Field id="ct-contact" label="Client name (person signing)"><input id="ct-contact" className="fi" value={form.client_contact} onChange={edit('client_contact')} /></Field>
                     <Field id="ct-email" label="Client email"><input id="ct-email" className="fi" type="email" value={form.client_email} onChange={edit('client_email')} /></Field>
-                    <Field id="ct-addr" label="Client address"><input id="ct-addr" className="fi" value={form.client_address} onChange={edit('client_address')} /></Field>
                   </div>
+                  <Field id="ct-addr" label="Client address"><input id="ct-addr" className="fi" value={form.client_address} onChange={edit('client_address')} placeholder="City, country" /></Field>
                   <div className="fi-row">
-                    <Field id="ct-service" label="Service"><input id="ct-service" className="fi" value={form.service} onChange={edit('service')} required /></Field>
+                    <Field id="ct-service" label="Project"><input id="ct-service" className="fi" value={form.service} onChange={edit('service')} placeholder="Brand identity revamp for …" required /></Field>
                     <Field id="ct-value" label="Project value"><input id="ct-value" className="fi" inputMode="decimal" value={form.value} onChange={edit('value')} /></Field>
                   </div>
-                  <div className="fi-row">
+                  <div className="fi-row three">
+                    <Field id="ct-date" label="Contract date"><input id="ct-date" className="fi" type="date" value={form.date} onChange={edit('date')} /></Field>
                     <Field id="ct-start" label="Start date"><input id="ct-start" className="fi" type="date" value={form.start_date} onChange={edit('start_date')} /></Field>
-                    <Field id="ct-dur" label="Duration"><input id="ct-dur" className="fi" value={form.duration} onChange={edit('duration')} placeholder="8 weeks" /></Field>
+                    <Field id="ct-end" label="End date"><input id="ct-end" className="fi" type="date" value={form.end_date} onChange={edit('end_date')} /></Field>
                   </div>
-                  <Field id="ct-date" label="Contract date"><input id="ct-date" className="fi" type="date" value={form.date} onChange={edit('date')} /></Field>
 
-                  <h2 className="card-title" style={{ margin: '22px 0 4px' }}>Clauses</h2>
-                  <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>The service and value you enter above fill in automatically.</p>
-                  {form.clauses.map((clause, index) => (
-                    <Field key={clause.id || index} id={`clause-${index}`} label={`${index + 1}. ${clause.title}`}>
-                      <textarea id={`clause-${index}`} className="fi" value={clause.body} onChange={(e) => editClause(index, e.target.value)} />
-                    </Field>
-                  ))}
+                  <h2 className="card-title" style={{ margin: '22px 0 4px' }}>Sections</h2>
+                  <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+                    Highlighted blanks in the preview still need filling in. Details above, and your name, address and phone from <Link to="/settings">Settings</Link>, fill in automatically.
+                  </p>
+                  <ClauseEditor clauses={form.clauses} disabled={signed} onChange={(clauses) => { setForm((f) => ({ ...f, clauses })); setDirty(true); }} />
                 </fieldset>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
                   <button className="btn bd" type="button" onClick={handleDelete} disabled={deleting}>
@@ -361,6 +367,7 @@ export default function Contracts() {
               </button>
             ))}
           </div>
+          <button className="btn bg" type="button" onClick={() => navigate('/contracts/template')}><Icon name="edit" />Template</button>
           <button className="btn bp" type="button" onClick={openCreate}><Icon name="plus" />New contract</button>
         </div>
       </div>
@@ -422,10 +429,10 @@ export default function Contracts() {
             </select>
           </Field>
           <div className="fi-row">
-            <Field id="ctc-service" label="Service"><input id="ctc-service" className="fi" value={createForm.service} onChange={(e) => setCreateForm({ ...createForm, service: e.target.value })} placeholder="Brand Identity" required autoFocus /></Field>
+            <Field id="ctc-service" label="Project"><input id="ctc-service" className="fi" value={createForm.service} onChange={(e) => setCreateForm({ ...createForm, service: e.target.value })} placeholder="Brand identity revamp for …" required autoFocus /></Field>
             <Field id="ctc-value" label="Project value"><input id="ctc-value" className="fi" inputMode="decimal" value={createForm.value} onChange={(e) => setCreateForm({ ...createForm, value: e.target.value })} placeholder="4500" /></Field>
           </div>
-          <p className="muted" style={{ fontSize: 13 }}>It starts with your standard clauses. You can adjust them in the editor.</p>
+          <p className="muted" style={{ fontSize: 13 }}>It starts from your <Link to="/contracts/template" onClick={() => setCreateOpen(false)}>contract template</Link>. You can adjust anything in the editor.</p>
         </form>
       </Modal>
     </>
