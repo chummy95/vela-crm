@@ -319,6 +319,22 @@ export default function Contracts() {
                     Highlighted blanks in the preview still need filling in. Details above, and your name, address and phone from <Link to="/settings">Settings</Link>, fill in automatically.
                   </p>
                   <ClauseEditor clauses={form.clauses} disabled={signed} onChange={(clauses) => { setForm((f) => ({ ...f, clauses })); setDirty(true); }} />
+                  {!signed && (
+                    <p style={{ marginTop: 12, fontSize: 13 }}>
+                      <button
+                        type="button"
+                        className="auth-link"
+                        onClick={async () => {
+                          if (!window.confirm('Replace these sections with your contract template? Edits you made to this contract’s sections will be lost.')) return;
+                          const latest = await studioProfileAPI.get().catch(() => brand);
+                          setForm((f) => ({ ...f, clauses: templateClauses(latest) }));
+                          setDirty(true);
+                        }}
+                      >
+                        Replace sections with my contract template
+                      </button>
+                    </p>
+                  )}
                 </fieldset>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
                   <button className="btn bd" type="button" onClick={handleDelete} disabled={deleting}>
