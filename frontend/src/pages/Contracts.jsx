@@ -23,6 +23,15 @@ const FILTERS = [
   { key: 'all', label: 'All' },
 ];
 
+export const COVER_TITLES = [
+  'Brand Identity Design Services Contract',
+  'Brand Strategy and Identity Contract',
+  'Packaging Design Services Contract',
+  'Website Design Services Contract',
+  'Brand and Website Design Contract',
+  'Design Services Contract',
+];
+
 function templateClauses(brand) {
   return Array.isArray(brand?.contract_clauses) && brand.contract_clauses.length ? brand.contract_clauses : DEFAULT_CLAUSES;
 }
@@ -30,6 +39,7 @@ function templateClauses(brand) {
 function blankContract(client, brand) {
   return {
     client_id: client?.id || '', client_name: client?.name || '', client_email: client?.email || '', client_contact: client?.contact || '', client_address: '',
+    cover_title: brand?.contract_cover_title || '',
     service: '', value: '', start_date: '', end_date: '', duration: '', date: new Date().toISOString().slice(0, 10), clauses: templateClauses(brand),
   };
 }
@@ -38,6 +48,7 @@ function blankContract(client, brand) {
 function contractToForm(c) {
   return {
     client_id: c.client_id || '', client_name: c.client_name || '', client_email: c.client_email || '', client_contact: c.client_contact || '', client_address: c.client_address || '',
+    cover_title: c.cover_title || '',
     service: c.service || '', value: c.value || '', start_date: c.start_date || '', end_date: c.end_date || '', duration: c.duration || '', date: c.date || '',
     clauses: contractClauses(c), signed: Boolean(c.signed),
   };
@@ -308,6 +319,12 @@ export default function Contracts() {
                     <Field id="ct-service" label="Project"><input id="ct-service" className="fi" value={form.service} onChange={edit('service')} placeholder="Brand identity revamp for …" required /></Field>
                     <Field id="ct-value" label="Project value"><input id="ct-value" className="fi" inputMode="decimal" value={form.value} onChange={edit('value')} /></Field>
                   </div>
+                  <Field id="ct-cover" label="Cover title">
+                    <input id="ct-cover" className="fi" list="cover-titles" value={form.cover_title} onChange={edit('cover_title')} placeholder={brand.contract_cover_title || 'Design Services Contract'} />
+                    <datalist id="cover-titles">
+                      {COVER_TITLES.map((t) => <option key={t} value={t} />)}
+                    </datalist>
+                  </Field>
                   <div className="fi-row three">
                     <Field id="ct-date" label="Contract date"><input id="ct-date" className="fi" type="date" value={form.date} onChange={edit('date')} /></Field>
                     <Field id="ct-start" label="Start date"><input id="ct-start" className="fi" type="date" value={form.start_date} onChange={edit('start_date')} /></Field>

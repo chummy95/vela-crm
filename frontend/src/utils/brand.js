@@ -101,6 +101,7 @@ export function brandVars(profile = {}) {
     '--doc-primary': primary,
     '--doc-accent': accent,
     '--doc-soft': `rgb(${tint(primary, 0.94).join(',')})`,
+    '--doc-on-primary': onColor(primary),
   };
   // With the studio's own colours, body text goes neutral so it doesn't clash with them.
   if (primary.toUpperCase() !== DEFAULT_BRAND.brand_primary) vars['--doc-text'] = '#2B2B2B';
@@ -219,4 +220,14 @@ export async function registerPdfFonts(pdf, profile = {}) {
 export function pdfTextColor(profile = {}) {
   const primary = isHex(profile.brand_primary) ? profile.brand_primary.toUpperCase() : DEFAULT_BRAND.brand_primary;
   return primary === DEFAULT_BRAND.brand_primary ? [27, 43, 75] : [43, 43, 43];
+}
+
+// Text colour that reads on a given background: white on dark colours, near-black on light ones.
+export function onColor(hex) {
+  const [r, g, b] = hexToRgb(hex).map((c) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return luminance > 0.45 ? '#1B1B1B' : '#FFFFFF';
 }

@@ -733,12 +733,14 @@ export const studioProfileAPI = {
       payload.payment_link = cleanPaymentLink(body.payment_link);
       if (text(body.payment_link) && !payload.payment_link) throw new Error('The payment link must be a web address starting with https://');
     }
-    if (body.logo !== undefined) {
-      const logo = String(body.logo || '');
+    ['logo', 'logo_light'].forEach((key) => {
+      if (body[key] === undefined) return;
+      const logo = String(body[key] || '');
       if (logo && !/^data:image\/(png|jpeg);base64,/.test(logo)) throw new Error('Upload the logo as an image.');
       if (logo.length > 290000) throw new Error('That logo is too large.');
-      payload.logo = logo;
-    }
+      payload[key] = logo;
+    });
+    if (body.contract_cover_title !== undefined) payload.contract_cover_title = text(body.contract_cover_title).slice(0, 120);
     ['brand_primary', 'brand_accent'].forEach((key) => {
       if (body[key] === undefined) return;
       if (!isHex(body[key])) throw new Error('Brand colours need to be hex codes like #1B2B4B.');
@@ -1043,6 +1045,7 @@ export const contractsAPI = {
       client_email: client?.email || email(body.client_email),
       client_address: text(body.client_address),
       client_contact: text(body.client_contact) || client?.contact || '',
+      cover_title: text(body.cover_title).slice(0, 120),
       service,
       value: text(body.value),
       start_date: text(body.start_date),
@@ -1069,6 +1072,7 @@ export const contractsAPI = {
       client_email: body.client_id !== undefined ? client?.email || '' : (body.client_email !== undefined ? email(body.client_email) : undefined),
       client_address: body.client_address !== undefined ? text(body.client_address) : undefined,
       client_contact: body.client_contact !== undefined ? text(body.client_contact) : undefined,
+      cover_title: body.cover_title !== undefined ? text(body.cover_title).slice(0, 120) : undefined,
       service: body.service !== undefined ? text(body.service) : undefined,
       value: body.value !== undefined ? text(body.value) : undefined,
       start_date: body.start_date !== undefined ? text(body.start_date) : undefined,
