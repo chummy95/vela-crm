@@ -375,9 +375,10 @@ textarea.fi { resize: vertical; min-height: 72px; line-height: 1.6; }
 .notice.ok { background: var(--ok-bg); color: var(--ok); }
 
 /* ── Document editor + preview (proposals, contracts) ─────── */
+.editor-split > .doc-preview { position: sticky; top: 0; }
 .editor-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 24px; align-items: start; }
 .doc-preview {
-  position: sticky; top: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+  position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
   padding: 44px 48px 48px; font-family: var(--doc-body, var(--font-heading)); color: var(--doc-text, var(--ink)); line-height: 1.6;
   box-shadow: 0 1px 0 var(--line), 0 12px 32px rgba(27, 43, 75, .06);
 }
@@ -393,7 +394,7 @@ textarea.fi { resize: vertical; min-height: 72px; line-height: 1.6; }
 .doc-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 28px; padding: 14px 0; border-top: 1px solid var(--doc-primary, var(--ink)); border-bottom: 1px solid var(--line); font-family: var(--doc-body, var(--font-body)); font-size: 13.5px; color: var(--text-2); }
 .doc-total strong { font-family: var(--doc-heading, var(--font-heading)); font-size: 24px; color: var(--doc-primary, var(--ink)); font-variant-numeric: lining-nums; }
 .doc-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 36px; font-family: var(--doc-body, var(--font-body)); font-size: 12.5px; color: var(--text-2); }
-.doc-sign div { border-top: 1px solid var(--doc-primary, var(--ink)); padding-top: 8px; }
+
 
 /* ── Calendar ──────────────────────────────────────────────── */
 .split.cal-split { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
@@ -706,3 +707,21 @@ a.file-row:hover { border-color: #CFC6B6; text-decoration: none; }
 .font-pick { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px; margin-bottom: 14px; }
 .font-pick .fi-row { align-items: end; }
 @media (max-width: 700px) { .color-row { grid-template-columns: 1fr; } }
+
+/* ── Signatures ───────────────────────────────────────────── */
+.sigpad-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.sigpad-box { position: relative; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); aspect-ratio: 560 / 180; overflow: hidden; }
+.sigpad-box.draw { cursor: crosshair; touch-action: none; }
+.sigpad-box canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.sigpad-line { position: absolute; left: 6%; right: 6%; bottom: 24%; border-bottom: 1px solid #D6CDBD; pointer-events: none; }
+.sigpad-hint { position: absolute; left: 7%; bottom: 27%; font-size: 13px; color: var(--text-3); pointer-events: none; }
+.sigpad-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 6px; }
+.sign-panel { margin-top: 24px; padding: 24px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); border-top: 3px solid var(--vela); }
+.sign-agree { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-sm); background: var(--paper); font-size: 14px; color: var(--ink); cursor: pointer; margin: 14px 0; }
+.sign-agree input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--vela); flex-shrink: 0; }
+.doc-sign .sig-img { display: block; height: 64px; max-width: 100%; object-fit: contain; object-position: left bottom; margin-bottom: 4px; }
+.doc-sign .sig-blank { height: 68px; }
+.doc-sign .sig-line { border-top: 1px solid var(--doc-primary, var(--ink)); padding-top: 8px; }
+.doc-sign .sig-name { color: var(--doc-text, var(--ink)); font-weight: 600; font-size: 13.5px; }
+.doc-audit { margin-top: 26px; padding: 14px 16px; border-radius: var(--r-sm); background: var(--paper); font-family: var(--doc-body, var(--font-body)); font-size: 12px; line-height: 1.6; color: var(--text-2); word-break: break-word; }
+.doc-audit b { color: var(--ink); font-weight: 600; }

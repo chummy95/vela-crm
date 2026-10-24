@@ -10,6 +10,9 @@ import { useAuth } from '../hooks/useAuth';
 import { clientsAPI, contractsAPI } from '../utils/api';
 import { DEFAULT_CLAUSES } from '../utils/constants';
 import { formatDate, formatMoney } from '../utils/format';
+import SignaturePad from '../components/SignaturePad';
+import { signedLabel } from '../utils/contracts';
+import { downloadContractPdf } from '../utils/contractPdf';
 
 const FILTERS = [
   { key: 'unsigned', label: 'Awaiting signature' },
@@ -61,6 +64,9 @@ export default function Contracts() {
   const [savedAt, setSavedAt] = useState('');
   const [detailError, setDetailError] = useState('');
   const [confirmSign, setConfirmSign] = useState(false);
+  const [studioSignOpen, setStudioSignOpen] = useState(false);
+  const [studioSig, setStudioSig] = useState({ name: '', image: '' });
+  const [downloading, setDownloading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -69,6 +75,13 @@ export default function Contracts() {
       .then(([rows, clientRows]) => { setContracts(rows); setClients(clientRows); })
       .catch((err) => setPageError(err.message))
       .finally(() => setLoaded(true));
+    // Signatures arrive live while this page is open.
+    return contractsAPI.subscribe((rows) => {
+      setContracts((prev) => prev.map((c) => {
+        const live = rows.find((r) => r.id === c.id);
+        return live && (live.signed !== c.signed || live.client_signature?.signed_at !== c.client_signature?.signed_at) ? { ...c, ...live } : c;
+      }));
+    }, () => {});
   }, []);
 
   const selected = useMemo(() => contracts.find((c) => c.id === routeId) || null, [contracts, routeId]);
@@ -167,6 +180,39 @@ export default function Contracts() {
     }
   }
 
+  async function saveStudioSignature() {
+    setSaving(true);
+    setDetailError('');
+    try {
+      if (dirty) await contractsAPI.update(selected.id, form);
+      const { studio_signature } = await contractsAPI.signAsStudio(selected.id, studioSig);
+      setContracts((prev) => prev.map((c) => (c.id === selected.id ? { ...c, ...form, studio_signature } : c)));
+      setDirty(false);
+      setStudioSignOpen(false);
+    } catch (err) {
+      setDetailError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeStudioSignature() {
+    setSaving(true);
+    try {
+      await contractsAPI.removeStudioSignature(selected.id);
+      setContracts((prev) => prev.map((c) => (c.id === selected.id ? { ...c, studio_signature: null } : c)));
+    } catch (err) {
+      setDetailError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function download() {
+    setDownloading(true);
+    try { await downloadContractPdf({ ...selected, ...form, studio_signature: selected.studio_signature }, brand, currency); } catch (err) { setDetailError(err.message || 'Couldn’t create the PDF.'); } finally { setDownloading(false); }
+  }
+
   async function handleDelete() {
     if (!confirmDelete) { setConfirmDelete(true); return; }
     setDeleting(true);
@@ -202,8 +248,12 @@ export default function Contracts() {
             {!signed && (
               <>
                 {confirmSign && <button className="btn bq" type="button" onClick={() => setConfirmSign(false)}>Not yet</button>}
-                <button className="btn bg" type="button" disabled={saving} onClick={markSigned}><Icon name="check" />{confirmSign ? 'Confirm: client has signed' : 'Mark as signed'}</button>
+                <button className="btn bq" type="button" disabled={saving} onClick={markSigned}>{confirmSign ? 'Confirm: signed on paper or elsewhere' : 'Signed outside Vela?'}</button>
               </>
+            )}
+            <button className="btn bg" type="button" disabled={downloading} onClick={download}><Icon name="download" />{downloading ? 'Preparing…' : 'PDF'}</button>
+            {!selected.studio_signature && !selected.client_signature && (
+              <button className="btn bg" type="button" disabled={saving} onClick={() => { setStudioSig({ name: user?.name || '', image: '' }); setStudioSignOpen(true); }}><Icon name="edit" />Add your signature</button>
             )}
             <button className="btn bp" type="button" disabled={saving || !dirty || signed} onClick={save}>Save</button>
           </div>
@@ -211,13 +261,30 @@ export default function Contracts() {
         <div className="content">
           <div className="page">
             {detailError && <div className="form-error">{detailError}</div>}
-            {signed && <div className="notice ok" style={{ marginBottom: 16 }}>This contract is signed, so it’s now read-only.</div>}
+            {signed && (
+              <div className="notice ok" style={{ marginBottom: 16 }}>
+                {selected.client_signature
+                  ? `${selected.client_signature.name} accepted and signed this contract on ${new Date(selected.client_signature.signed_at).toLocaleString('en-GB', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}. It’s now read-only.`
+                  : 'This contract is marked as signed, so it’s now read-only.'}
+              </div>
+            )}
+            {!signed && (
+              <div className="locked-note" style={{ marginBottom: 16 }}>
+                <Icon name="contract" size={16} />
+                <span style={{ flex: 1 }}>
+                  {selected.client_id
+                    ? <>{selected.client_name} can read, accept and sign this in their client portal. {selected.studio_signature ? `You signed it as ${selected.studio_signature.name}.` : 'Add your own signature first so it’s ready to go.'}</>
+                    : 'Link a client so they can sign this in their portal.'}
+                </span>
+                {selected.studio_signature && <button type="button" className="auth-link" style={{ fontSize: 13 }} disabled={saving} onClick={removeStudioSignature}>Remove my signature</button>}
+              </div>
+            )}
             <div className="editor-split">
               <form className="panel" style={{ padding: 22 }} onSubmit={(e) => { e.preventDefault(); save(); }}>
                 <fieldset disabled={signed} style={{ border: 'none', minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <h1 className="h-section">Contract details</h1>
-                    <Pill status={signed ? 'signed' : 'unsigned'} label={signed ? 'Signed' : 'Awaiting signature'} />
+                    <Pill status={signed ? 'signed' : 'unsigned'} label={signedLabel(selected)} />
                   </div>
                   <Field id="ct-client" label="Client">
                     <select id="ct-client" className="fi fsel" value={form.client_id} onChange={pickClient(setForm, true)}>
@@ -255,10 +322,28 @@ export default function Contracts() {
                 </div>
               </form>
 
-              <ContractDocument contract={form} studioName={user?.studio_name} currency={currency} brand={brand} />
+              <ContractDocument contract={{ ...selected, ...form }} studioName={user?.studio_name} currency={currency} brand={brand} />
             </div>
           </div>
         </div>
+        <Modal
+          open={studioSignOpen}
+          onClose={() => setStudioSignOpen(false)}
+          title="Add your signature"
+          footer={
+            <>
+              <button className="btn bg" type="button" onClick={() => setStudioSignOpen(false)}>Cancel</button>
+              <button className="btn bp" type="button" disabled={saving || !studioSig.image || studioSig.name.trim().length < 2} onClick={saveStudioSignature}>{saving ? 'Signing…' : 'Sign'}</button>
+            </>
+          }
+        >
+          <p className="muted" style={{ fontSize: 13.5, marginBottom: 14 }}>Your signature goes on the studio’s side of this contract. {form.client_name || 'The client'} then signs theirs in the portal.</p>
+          <div className="fc">
+            <label className="fc-label" htmlFor="ss-name">Your name</label>
+            <input id="ss-name" className="fi" value={studioSig.name} onChange={(e) => setStudioSig((s) => ({ ...s, name: e.target.value }))} />
+          </div>
+          {studioSignOpen && <SignaturePad name={studioSig.name} onChange={(image) => setStudioSig((s) => ({ ...s, image }))} />}
+        </Modal>
       </>
     );
   }
@@ -298,7 +383,7 @@ export default function Contracts() {
                       <td>{c.service || '—'}</td>
                       <td className="r num" style={{ fontWeight: 500 }}>{c.value ? formatMoney(c.value, currency) : '—'}</td>
                       <td className="hide-sm muted">{formatDate(c.date || c.created_at)}</td>
-                      <td><Pill status={c.signed ? 'signed' : 'unsigned'} label={c.signed ? 'Signed' : 'Awaiting signature'} /></td>
+                      <td><Pill status={c.signed ? 'signed' : 'unsigned'} label={signedLabel(c)} /></td>
                     </tr>
                   ))}
                 </tbody>

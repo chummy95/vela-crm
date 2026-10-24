@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
-import { invoicesAPI, paymentsAPI, questionnairesAPI, reviewsAPI } from '../utils/api';
+import { contractsAPI, invoicesAPI, paymentsAPI, questionnairesAPI, reviewsAPI } from '../utils/api';
 import { money } from '../utils/invoices';
 
 const AlertsContext = createContext({ responses: [], unseen: [], reviews: [], reviewUnseen: [], loaded: false });
@@ -29,6 +29,24 @@ export function QuestionnaireAlertsProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const known = useRef(null);
   const knownReviews = useRef(null);
+
+  // Contracts signed by clients while Vela is open.
+  const knownSigned = useRef(null);
+  useEffect(() => contractsAPI.subscribe((rows) => {
+    const signed = rows.filter((c) => c.signed && c.client_signature);
+    if (knownSigned.current) {
+      signed.filter((c) => !knownSigned.current.has(c.id)).forEach((c) => {
+        setToasts((current) => [...current, { key: `ct:${c.id}`, contract: c }].slice(-3));
+        if (canNotify() && Notification.permission === 'granted') {
+          try {
+            const n = new Notification(`${c.client_signature.name} signed the ${c.service || ''} contract`, { body: c.client_name, tag: `ct-${c.id}` });
+            n.onclick = () => { window.focus(); window.location.assign(`/contracts/${c.id}`); };
+          } catch { /* the pop-up still shows */ }
+        }
+      });
+    }
+    knownSigned.current = new Set(signed.map((c) => c.id));
+  }, () => {}), []);
 
   // Card payments made through Stripe: mark those invoices paid (this also unlocks final files).
   useEffect(() => {
@@ -131,10 +149,16 @@ export function QuestionnaireAlertsProvider({ children }) {
     <AlertsContext.Provider value={{ responses, unseen, reviews, reviewUnseen, loaded }}>
       {children}
       <div className="toasts" aria-live="polite">
-        {toasts.map(({ key, response: r, review, payment }) => (
+        {toasts.map(({ key, response: r, review, payment, contract }) => (
           <div key={key} className="toast" role="status">
-            <span className="toast-ico"><Icon name={payment ? 'receipt' : review ? (review.status === 'approved' ? 'check' : 'message') : 'bell'} size={18} /></span>
-            {payment ? (
+            <span className="toast-ico"><Icon name={contract ? 'contract' : payment ? 'receipt' : review ? (review.status === 'approved' ? 'check' : 'message') : 'bell'} size={18} /></span>
+            {contract ? (
+              <div style={{ minWidth: 0 }}>
+                <div className="row-title">{contract.client_signature.name} signed the contract</div>
+                <div className="row-sub">{contract.service}{contract.client_name ? `, ${contract.client_name}` : ''}</div>
+                <Link to={`/contracts/${contract.id}`} onClick={() => dismiss(key)} style={{ fontSize: 13, fontWeight: 500 }}>Open</Link>
+              </div>
+            ) : payment ? (
               <div style={{ minWidth: 0 }}>
                 <div className="row-title">{payment.client_name} paid {money(payment.amount, payment.currency || 'GBP')}</div>
                 <div className="row-sub">{payment.number || 'Invoice'}, by card through Stripe</div>

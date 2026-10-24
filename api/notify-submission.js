@@ -31,7 +31,8 @@ module.exports = async function handler(req, res) {
   }
 
   const isReview = Boolean(req.body?.reviewId);
-  const recordId = String((isReview ? req.body?.reviewId : req.body?.responseId) || '').trim();
+  const isContract = Boolean(req.body?.contractId);
+  const recordId = String((isContract ? req.body?.contractId : isReview ? req.body?.reviewId : req.body?.responseId) || '').trim();
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(recordId) || !token) {
     return res.status(400).json({ error: 'Missing record or sign-in.' });
@@ -40,7 +41,7 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ sent: false, reason: 'Email notifications are not set up.' });
   }
 
-  const collection = isReview ? 'reviews' : 'questionnaire_responses';
+  const collection = isContract ? 'contracts' : isReview ? 'reviews' : 'questionnaire_responses';
   const docUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collection}/${recordId}`;
   const docRes = await fetch(docUrl, { headers: { Authorization: `Bearer ${token}` } });
   if (!docRes.ok) {
@@ -50,7 +51,7 @@ module.exports = async function handler(req, res) {
 
   const client = field(doc, 'client_name') || 'A client';
   const contact = field(doc, 'contact_name') || client;
-  const title = field(doc, 'title') || (isReview ? 'their work' : 'questionnaire');
+  const title = field(doc, 'title') || (isContract ? `${field(doc, 'service') || 'Project'} contract` : isReview ? 'their work' : 'questionnaire');
   const project = field(doc, 'project_service');
   const host = req.headers['x-forwarded-host'] || req.headers.host || 'vela-crm.vercel.app';
 
@@ -58,7 +59,17 @@ module.exports = async function handler(req, res) {
   let headline;
   let subject;
   let link;
-  if (isReview) {
+  if (isContract) {
+    if (field(doc, 'signed') !== true) {
+      return res.status(200).json({ sent: false, reason: 'Nothing new to report.' });
+    }
+    const signer = doc?.fields?.client_signature?.mapValue?.fields;
+    const who = field({ fields: signer }, 'name') || contact;
+    when = Date.parse(field(doc, 'signed_at'));
+    headline = `${who} signed the ${field(doc, 'service') || 'project'} contract`;
+    subject = `${who} signed your contract`;
+    link = `https://${host}/contracts/${recordId}`;
+  } else if (isReview) {
     when = Date.parse(field(doc, 'client_activity_at'));
     const status = field(doc, 'status');
     const decided = field(doc, 'decided_at') && field(doc, 'decided_at') === field(doc, 'client_activity_at');

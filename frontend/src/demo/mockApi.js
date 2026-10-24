@@ -45,6 +45,7 @@ const db = {
     { id: 'pp2', client_id: 'c4', client_name: 'Lumen Skin', service: 'Packaging Design', date: day(-14), value: '3900', template: 'A', primary_color: '#1B2B4B', accent_color: '#C9A84C', intro: '', overview: '', packages: [], deliverables: ['3 SKUs', 'Print-ready files'], timeline: [], terms: '', process: '', status: 'approved', created_at: iso(day(-14)) },
   ],
   contracts: [
+    { id: 'ct3', client_id: 'c1', client_name: 'Maison Noor', client_email: 'layla@maisonnoor.co', client_address: 'King Fahd Road, Riyadh', service: 'Packaging Design', value: '3600', start_date: day(7), duration: '6 weeks', date: day(-1), primary_color: '#1B2B4B', accent_color: '#C9A84C', clauses: [], signed: false, created_at: iso(day(-1)) },
     { id: 'ct0', client_id: 'c1', client_name: 'Maison Noor', client_email: 'layla@maisonnoor.co', service: 'Brand Identity', value: '4800', start_date: day(-34), duration: '8 weeks', date: day(-36), primary_color: '#1B2B4B', accent_color: '#C9A84C', clauses: [], signed: true, created_at: iso(day(-36)) },
     { id: 'ct1', client_id: 'c4', client_name: 'Lumen Skin', client_email: 'priya@lumenskin.com', service: 'Packaging Design', value: '3900', start_date: day(-9), duration: '6 weeks', date: day(-11), primary_color: '#1B2B4B', accent_color: '#C9A84C', clauses: [], signed: true, created_at: iso(day(-11)) },
     { id: 'ct2', client_id: 'c5', client_name: 'Kettle House', client_email: 'james@kettlehouse.co.uk', service: 'Brand Identity', value: '4500', start_date: day(10), duration: '8 weeks', date: day(-1), primary_color: '#1B2B4B', accent_color: '#C9A84C', clauses: [], signed: false, created_at: iso(day(-1)) },
@@ -280,12 +281,34 @@ export const paymentsAPI = {
 };
 
 export const proposalsAPI = crud('proposals');
+const contractListeners = new Set();
+const emitContracts = () => contractListeners.forEach((fn) => fn(JSON.parse(JSON.stringify(db.contracts))));
 export const contractsAPI = {
   ...crud('contracts'),
   async sign(rid) {
     const row = byId('contracts', rid);
     row.signed = true;
+    row.signed_at = new Date().toISOString();
+    emitContracts();
     return delay({ success: true });
+  },
+  async signAsStudio(rid, { name, image }) {
+    const row = byId('contracts', rid);
+    row.studio_signature = { name, image, signed_at: new Date().toISOString(), email: 'studio@example.com' };
+    return delay({ studio_signature: row.studio_signature });
+  },
+  async removeStudioSignature(rid) { byId('contracts', rid).studio_signature = null; return delay({}); },
+  async signAsClient(rid, { name, title, image, method, fingerprint, agreement }) {
+    const row = byId('contracts', rid);
+    const stamp = new Date().toISOString();
+    Object.assign(row, { signed: true, signed_at: stamp, signed_hash: fingerprint, client_signature: { name, title, image, method, agreement, signed_at: stamp, email: 'layla@maisonnoor.co' } });
+    emitContracts();
+    return delay({ ...row });
+  },
+  subscribe(onChange) {
+    contractListeners.add(onChange);
+    onChange(JSON.parse(JSON.stringify(db.contracts)));
+    return () => contractListeners.delete(onChange);
   },
 };
 export const eventsAPI = crud('events');

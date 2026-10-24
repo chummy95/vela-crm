@@ -2,6 +2,7 @@ import React from 'react';
 import { DEFAULT_CLAUSES } from '../utils/constants';
 import { formatDate, formatMoney } from '../utils/format';
 import { brandVars, useBrandFonts } from '../utils/brand';
+import { AGREEMENT_TEXT } from '../utils/contracts';
 
 const longDate = { day: 'numeric', month: 'long', year: 'numeric' };
 
@@ -72,9 +73,41 @@ export function ContractDocument({ contract, studioName: nameProp, currency = 'G
         </section>
       ))}
       <div className="doc-sign">
-        <div>For {studioName || 'the Studio'}</div>
-        <div>For {contract.client_name || 'the Client'}{contract.signed ? ' (signed)' : ''}</div>
+        <SignatureBlock party={`For ${studioName || 'the Studio'}`} signature={contract.studio_signature} />
+        <SignatureBlock
+          party={`For ${contract.client_name || 'the Client'}`}
+          signature={contract.client_signature}
+          note={contract.signed && !contract.client_signature ? 'Signed outside Vela' : ''}
+        />
       </div>
+      {contract.client_signature && (
+        <div className="doc-audit" aria-label="Signature record">
+          <b>Signed electronically.</b> {contract.client_signature.name}
+          {contract.client_signature.email ? ` (${contract.client_signature.email})` : ''} {contract.client_signature.method === 'typed' ? 'typed' : 'drew'} their signature
+          {' '}on {stamp(contract.client_signature.signed_at)} after agreeing: “{contract.client_signature.agreement || AGREEMENT_TEXT}”
+          {contract.studio_signature ? ` ${contract.studio_signature.name} signed for ${studioName || 'the Studio'} on ${stamp(contract.studio_signature.signed_at)}.` : ''}
+          {contract.signed_hash && <><br />Document fingerprint (SHA-256): {contract.signed_hash}</>}
+        </div>
+      )}
     </article>
+  );
+}
+
+function stamp(value) {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+}
+
+function SignatureBlock({ party, signature, note }) {
+  return (
+    <div>
+      {signature?.image ? <img className="sig-img" src={signature.image} alt={`Signature of ${signature.name}`} /> : <div className="sig-blank" />}
+      <div className="sig-line">
+        {signature ? <div className="sig-name">{signature.name}{signature.title ? `, ${signature.title}` : ''}</div> : null}
+        <div>{party}</div>
+        {signature && <div>{stamp(signature.signed_at)}</div>}
+        {!signature && note && <div>{note}</div>}
+      </div>
+    </div>
   );
 }

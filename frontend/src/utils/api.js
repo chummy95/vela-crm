@@ -1067,11 +1067,71 @@ export const contractsAPI = {
     return getAccessibleDoc('contracts', id, session);
   },
 
+  // Studio records a contract signed on paper or elsewhere.
   async sign(id) {
     const session = await requireStudioSession();
     await getAccessibleDoc('contracts', id, session);
-    await updateDoc(doc(db, 'contracts', id), { signed: true });
+    await updateDoc(doc(db, 'contracts', id), { signed: true, signed_at: now() });
     return { success: true };
+  },
+
+  // The studio adds its own signature (before or after the client signs).
+  async signAsStudio(id, { name, image }) {
+    const session = await requireStudioSession();
+    await getAccessibleDoc('contracts', id, session);
+    if (!text(name)) throw new Error('Type your name.');
+    if (!/^data:image\/png;base64,/.test(String(image || '')) || image.length > 240000) throw new Error('Add your signature.');
+    const studio_signature = { name: text(name).slice(0, 120), image, signed_at: now(), email: session.firebaseUser.email || '' };
+    await updateDoc(doc(db, 'contracts', id), { studio_signature, updated_at: now() });
+    return { studio_signature };
+  },
+
+  async removeStudioSignature(id) {
+    const session = await requireStudioSession();
+    await getAccessibleDoc('contracts', id, session);
+    await updateDoc(doc(db, 'contracts', id), { studio_signature: null, updated_at: now() });
+  },
+
+  // The client accepts and signs in their portal. Records who signed, when, and a
+  // fingerprint of exactly what they signed.
+  async signAsClient(id, { name, title, image, method, fingerprint, agreement }) {
+    const session = await requireClientSession();
+    const current = await getAccessibleDoc('contracts', id, session);
+    if (current.signed) throw new Error('This contract is already signed.');
+    if (text(name).length < 2) throw new Error('Type your full name.');
+    if (!/^data:image\/png;base64,/.test(String(image || '')) || image.length > 240000) throw new Error('Add your signature.');
+    const stamp = now();
+    const client_signature = {
+      name: text(name).slice(0, 120),
+      title: text(title).slice(0, 120),
+      image,
+      method: method === 'typed' ? 'typed' : 'drawn',
+      signed_at: stamp,
+      email: session.firebaseUser.email || '',
+      agreement: text(agreement).slice(0, 500),
+      user_agent: typeof navigator !== 'undefined' ? String(navigator.userAgent || '').slice(0, 300) : '',
+    };
+    const payload = { signed: true, signed_at: stamp, signed_hash: text(fingerprint).slice(0, 64), client_signature, updated_at: stamp };
+    await updateDoc(doc(db, 'contracts', id), payload);
+    notifyStudioOfSubmission(id, 'contract');
+    return { ...current, ...payload };
+  },
+
+  // Live updates for the studio, so a new signature shows straight away.
+  subscribe(onChange, onError = () => {}) {
+    let unsubscribe = () => {};
+    let cancelled = false;
+    requireStudioSession()
+      .then((session) => {
+        if (cancelled) return;
+        unsubscribe = onSnapshot(
+          query(collection(db, 'contracts'), where('user_id', '==', session.firebaseUser.uid)),
+          (snapshot) => onChange(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
+          onError
+        );
+      })
+      .catch(onError);
+    return () => { cancelled = true; unsubscribe(); };
   },
 
   async remove(id) {
@@ -1341,7 +1401,7 @@ async function notifyStudioOfSubmission(responseId, kind = 'questionnaire') {
       method: 'POST',
       keepalive: true,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(kind === 'review' ? { reviewId: responseId } : { responseId }),
+      body: JSON.stringify(kind === 'review' ? { reviewId: responseId } : kind === 'contract' ? { contractId: responseId } : { responseId }),
     });
   } catch {
     // Email is a convenience; the submission itself has already been saved.
