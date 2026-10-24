@@ -90,6 +90,18 @@ service cloud.firestore {
       );
     }
 
+    // A client may sign a contract shared with them, once, adding only their signature.
+    function clientCanSignContract() {
+      return clientCanReadRecord()
+        && resource.data.get('signed', false) != true
+        && request.resource.data.signed == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['signed', 'signed_at', 'signed_hash', 'client_signature', 'updated_at'])
+        && request.resource.data.client_signature.name is string
+        && request.resource.data.client_signature.name.size() > 1
+        && request.resource.data.client_signature.image is string
+        && request.resource.data.client_signature.image.size() < 250000;
+    }
+
     function publicFormTargetExists() {
       return request.resource.data.user_id is string
         && request.resource.data.user_id.size() > 0
@@ -133,7 +145,7 @@ service cloud.firestore {
     match /contracts/{docId} {
       allow create: if studioOwnsIncomingRecord();
       allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
-      allow update: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow update: if (studioOwnsExistingRecord() && studioKeepsOwnership()) || clientCanSignContract();
       allow delete: if studioOwnsExistingRecord();
     }
 

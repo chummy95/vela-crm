@@ -55,7 +55,7 @@ export default function PortalDashboard() {
       key: `pp-${p.id}`, level: 'info', title: `Review the ${p.service || 'new'} proposal`, sub: `Sent ${relativeDay(p.date || p.created_at)}`, to: `/portal/proposals/${p.id}`,
     }));
     contracts.filter((c) => !c.signed).forEach((c) => items.push({
-      key: `ct-${c.id}`, level: 'warn', title: c.service ? `Your ${c.service} contract is waiting to be signed` : 'Your contract is waiting to be signed', sub: 'Read it through. The studio marks it signed once you’ve signed', to: `/portal/contracts/${c.id}`,
+      key: `ct-${c.id}`, level: 'warn', title: c.service ? `Your ${c.service} contract is waiting to be signed` : 'Your contract is waiting to be signed', sub: 'Read it through, then accept and sign it online', to: `/portal/contracts/${c.id}`,
     }));
     invoices.filter((i) => i.status !== 'paid').forEach((i) => items.push({
       key: `inv-${i.id}`, level: isOverdue(i) ? 'err' : 'warn',
