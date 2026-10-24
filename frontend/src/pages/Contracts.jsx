@@ -5,7 +5,7 @@ import Modal from '../components/Modal';
 import Pill from '../components/Pill';
 import Icon from '../components/Icon';
 import ClientMark from '../components/ClientMark';
-import { ContractDocument } from '../components/Documents';
+import { ContractDocument, coverTitle as coverTitleOf } from '../components/Documents';
 import { useAuth } from '../hooks/useAuth';
 import { clientsAPI, contractsAPI, studioProfileAPI } from '../utils/api';
 import { DEFAULT_CLAUSES } from '../utils/constants';
@@ -15,7 +15,8 @@ import { contractClauses } from '../utils/contracts';
 import { formatDate, formatMoney } from '../utils/format';
 import SignaturePad from '../components/SignaturePad';
 import { signedLabel } from '../utils/contracts';
-import { downloadContractPdf } from '../utils/contractPdf';
+import { buildContractPdf, contractFileName } from '../utils/contractPdf';
+import PdfPreview from '../components/PdfPreview';
 
 const FILTERS = [
   { key: 'unsigned', label: 'Awaiting signature' },
@@ -85,7 +86,7 @@ export default function Contracts() {
   const [confirmSign, setConfirmSign] = useState(false);
   const [studioSignOpen, setStudioSignOpen] = useState(false);
   const [studioSig, setStudioSig] = useState({ name: '', image: '' });
-  const [downloading, setDownloading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -223,10 +224,7 @@ export default function Contracts() {
     }
   }
 
-  async function download() {
-    setDownloading(true);
-    try { await downloadContractPdf({ ...selected, ...form, studio_signature: selected.studio_signature }, brand, currency); } catch (err) { setDetailError(err.message || 'Couldn’t create the PDF.'); } finally { setDownloading(false); }
-  }
+  const previewContract = () => ({ ...selected, ...form, studio_signature: selected.studio_signature });
 
   async function handleDelete() {
     if (!confirmDelete) { setConfirmDelete(true); return; }
@@ -269,7 +267,7 @@ export default function Contracts() {
                 <button className="btn bq" type="button" disabled={saving} onClick={markSigned}>{confirmSign ? 'Confirm: signed on paper or elsewhere' : 'Signed outside Vela?'}</button>
               </>
             )}
-            <button className="btn bg" type="button" disabled={downloading} onClick={download}><Icon name="download" />{downloading ? 'Preparing…' : 'PDF'}</button>
+            <button className="btn bg" type="button" onClick={() => setPreviewOpen(true)}><Icon name="proposal" />View PDF</button>
             {!selected.studio_signature && !selected.client_signature && (
               <button className="btn bg" type="button" disabled={saving} onClick={() => { setStudioSig({ name: user?.name || '', image: '' }); setStudioSignOpen(true); }}><Icon name="edit" />Add your signature</button>
             )}
@@ -365,6 +363,13 @@ export default function Contracts() {
             </div>
           </div>
         </div>
+        <PdfPreview
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          title={`${coverTitleOf(previewContract(), brand)}${selected.client_name ? `, ${selected.client_name}` : ''}`}
+          build={() => buildContractPdf(previewContract(), brand, currency)}
+          fileName={contractFileName(previewContract(), brand)}
+        />
         <Modal
           open={studioSignOpen}
           onClose={() => setStudioSignOpen(false)}

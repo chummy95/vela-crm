@@ -783,3 +783,18 @@ a.file-row:hover { border-color: #CFC6B6; text-decoration: none; }
 @media print {
   .contract-cover { margin: 0 0 0; min-height: 100vh; border-radius: 0; break-after: page; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ── PDF preview ──────────────────────────────────────────── */
+.pdfv { position: fixed; inset: 0; z-index: 1100; display: flex; flex-direction: column; background: #262B36; }
+.pdfv-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; background: #12161F; border-bottom: 1px solid rgba(255,255,255,.08); }
+.pdfv-title { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.pdfv-title .row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdfv-sub { color: rgba(255,255,255,.6); font-size: 12.5px; white-space: nowrap; }
+.pdfv-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.pdfv-close { color: rgba(255,255,255,.8); }
+.pdfv-close:hover { background: rgba(255,255,255,.1); color: #fff; }
+.pdfv-body { flex: 1; overflow: auto; padding: 24px 16px 40px; }
+.pdfv-pages { max-width: 860px; margin: 0 auto; display: grid; gap: 18px; justify-items: center; }
+.pdfv-pages canvas { display: block; max-width: 100%; height: auto; background: #fff; box-shadow: 0 6px 30px rgba(0,0,0,.35); }
+.pdfv-msg { color: rgba(255,255,255,.8); text-align: center; padding: 60px 0; font-size: 14px; }
+@media (max-width: 700px) { .pdfv-body { padding: 12px 8px 30px; } .pdfv-bar { padding: 10px 12px; } }

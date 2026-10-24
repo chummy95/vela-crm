@@ -6,7 +6,8 @@ import InvoiceDocument from '../components/InvoiceDocument';
 import { invoicesAPI, paymentsAPI, projectsAPI, studioProfileAPI } from '../utils/api';
 import { formatDate, formatMoney, isOverdue, relativeDay } from '../utils/format';
 import { DEFAULT_STUDIO_PROFILE, money, toNumber } from '../utils/invoices';
-import { downloadInvoicePdf } from '../utils/invoicePdf';
+import { buildInvoicePdf, invoiceFileName } from '../utils/invoicePdf';
+import PdfPreview from '../components/PdfPreview';
 
 export default function PortalInvoices() {
   const navigate = useNavigate();
@@ -20,7 +21,7 @@ export default function PortalInvoices() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
   const [paying, setPaying] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [justPaid, setJustPaid] = useState(false);
 
   useEffect(() => {
@@ -58,17 +59,6 @@ export default function PortalInvoices() {
     }
   }
 
-  async function download() {
-    setDownloading(true);
-    try {
-      await downloadInvoicePdf(selected, profile);
-    } catch (err) {
-      setError(err.message || 'Couldn’t create the PDF.');
-    } finally {
-      setDownloading(false);
-    }
-  }
-
   if (routeId) {
     if (!selected) {
       return (
@@ -89,7 +79,7 @@ export default function PortalInvoices() {
         <div className="topbar">
           <nav className="tb-crumb" aria-label="Breadcrumb"><Link to="/portal/invoices"><Icon name="back" size={16} />Invoices</Link></nav>
           <div className="tb-r">
-            <button className="btn bg" type="button" disabled={downloading} onClick={download}><Icon name="download" />{downloading ? 'Preparing…' : 'Download PDF'}</button>
+            <button className="btn bg" type="button" onClick={() => setPreviewOpen(true)}><Icon name="proposal" />View PDF</button>
           </div>
         </div>
         <div className="content">
@@ -126,6 +116,13 @@ export default function PortalInvoices() {
             )}
 
             <InvoiceDocument invoice={paid && selected.status !== 'paid' ? { ...selected, status: 'paid', paid_at: new Date().toISOString() } : selected} profile={profile} />
+            <PdfPreview
+              open={previewOpen}
+              onClose={() => setPreviewOpen(false)}
+              title={selected.number ? `Invoice ${selected.number}` : 'Invoice'}
+              build={() => buildInvoicePdf(paid && selected.status !== 'paid' ? { ...selected, status: 'paid', paid_at: new Date().toISOString() } : selected, profile)}
+              fileName={invoiceFileName(selected, profile)}
+            />
           </div>
         </div>
       </>
