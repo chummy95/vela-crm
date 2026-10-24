@@ -109,6 +109,7 @@ export default function Settings() {
   const [error, setError] = useState('');
   const [stripe, setStripe] = useState(null);
   const fileRef = useRef(null);
+  const lightRef = useRef(null);
 
   useEffect(() => {
     studioProfileAPI.get(undefined, { fresh: true }).then((p) => setForm({ ...DEFAULT_STUDIO_PROFILE, ...DEFAULT_BRAND, ...p })).catch((err) => setError(err.message)).finally(() => setLoaded(true));
@@ -117,13 +118,13 @@ export default function Settings() {
 
   const set = (key) => (e) => { setSaved(false); setForm((f) => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })); };
 
-  async function pickLogo(file) {
+  async function pickLogo(file, key = 'logo') {
     if (!file) return;
     setError('');
     try {
       const logo = await resizeLogo(file);
       setSaved(false);
-      setForm((f) => ({ ...f, logo }));
+      setForm((f) => ({ ...f, [key]: logo }));
     } catch (err) {
       setError(err.message);
     }
@@ -175,6 +176,19 @@ export default function Settings() {
                     </div>
                     <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>PNG with a transparent background works best.</div>
                     <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden onChange={(e) => { pickLogo(e.target.files?.[0]); e.target.value = ''; }} />
+                  </div>
+                </div>
+                <div className="logo-row">
+                  <div className="logo-box dark" style={{ background: isHex(form.brand_primary) ? form.brand_primary : '#1B2B4B' }}>
+                    {form.logo_light ? <img src={form.logo_light} alt="Your logo for dark backgrounds" /> : <span style={{ color: 'rgba(255,255,255,.7)' }}>Light logo</span>}
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button type="button" className="btn bg bsm" onClick={() => lightRef.current?.click()}><Icon name="plus" size={15} />{form.logo_light ? 'Replace light logo' : 'Upload light logo'}</button>
+                      {form.logo_light && <button type="button" className="btn bq bsm" onClick={() => { setSaved(false); setForm((f) => ({ ...f, logo_light: '' })); }}>Remove</button>}
+                    </div>
+                    <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>A white or light version for contract covers on your main colour. Optional.</div>
+                    <input ref={lightRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden onChange={(e) => { pickLogo(e.target.files?.[0], 'logo_light'); e.target.value = ''; }} />
                   </div>
                 </div>
                 <div className="color-row">

@@ -7,8 +7,8 @@ import { studioProfileAPI } from '../utils/api';
 import { DESIGN_CONTRACT_TEMPLATE } from '../utils/contractTemplate';
 
 const SAMPLE = {
-  client_name: 'Fawzy Hotel', client_contact: 'Client name', client_email: 'client@example.com', client_address: 'Ibadan, Nigeria',
-  service: 'Brand identity revamp for Fawzy Hotel', value: '700',
+  client_name: 'Client company', client_contact: 'Client name', client_email: 'client@example.com', client_address: 'Ibadan, Nigeria',
+  service: 'Brand identity design for the client', value: '700',
   date: new Date().toISOString().slice(0, 10),
   start_date: new Date().toISOString().slice(0, 10),
   end_date: new Date(Date.now() + 28 * 864e5).toISOString().slice(0, 10),
@@ -18,6 +18,7 @@ const SAMPLE = {
 export default function ContractTemplate() {
   const [profile, setProfile] = useState(null);
   const [clauses, setClauses] = useState([]);
+  const [cover, setCover] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -28,6 +29,7 @@ export default function ContractTemplate() {
     studioProfileAPI.get(undefined, { fresh: true })
       .then((p) => {
         setProfile(p);
+        setCover(p.contract_cover_title || '');
         setClauses(Array.isArray(p.contract_clauses) && p.contract_clauses.length ? p.contract_clauses : DESIGN_CONTRACT_TEMPLATE);
       })
       .catch((err) => setError(err.message));
@@ -37,7 +39,7 @@ export default function ContractTemplate() {
     setSaving(true);
     setError('');
     try {
-      const updated = await studioProfileAPI.save({ contract_clauses: clauses });
+      const updated = await studioProfileAPI.save({ contract_clauses: clauses, contract_cover_title: cover });
       setProfile(updated);
       setDirty(false);
       setSaved(true);
@@ -84,11 +86,18 @@ export default function ContractTemplate() {
               <p className="muted" style={{ fontSize: 13.5, margin: '4px 0 16px' }}>
                 Every new contract starts from this. Changes here don’t affect contracts you’ve already created.
               </p>
+              {profile && (
+                <div className="fc">
+                  <label className="fc-label" htmlFor="tpl-cover">Usual cover title</label>
+                  <input id="tpl-cover" className="fi" value={cover} placeholder="Design Services Contract" onChange={(e) => { setCover(e.target.value); setDirty(true); setSaved(false); }} />
+                  <div className="faint" style={{ fontSize: 12.5, marginTop: 4 }}>The big title on the cover. You can change it on each contract to match the project, e.g. Packaging Design Services Contract.</div>
+                </div>
+              )}
               {profile
                 ? <ClauseEditor clauses={clauses} onChange={(next) => { setClauses(next); setDirty(true); setSaved(false); }} />
                 : <p className="muted">Loading…</p>}
             </section>
-            {profile && <ContractDocument contract={{ ...SAMPLE, clauses }} brand={profile} />}
+            {profile && <ContractDocument contract={{ ...SAMPLE, clauses, cover_title: cover }} brand={profile} />}
           </div>
         </div>
       </div>

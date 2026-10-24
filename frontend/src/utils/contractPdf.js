@@ -1,12 +1,10 @@
 // The contract as a PDF, with both signatures and the signature record, in the studio's brand.
 import { contractClauses, AGREEMENT_TEXT } from './contracts';
 import { fillClause, inlineRuns, parseClause, placeholderValues } from './contractTemplate';
-import { formatDate, formatMoney } from './format';
-import { hexToRgb, pdfTextColor, registerPdfFonts } from './brand';
+import { hexToRgb, onColor, pdfTextColor, registerPdfFonts } from './brand';
+import { coverTitle } from '../components/Documents';
 
 const MUTED = [86, 100, 126];
-const LINE = [230, 224, 213];
-const longDate = { day: 'numeric', month: 'long', year: 'numeric' };
 
 function imageSize(dataUrl) {
   return new Promise((resolve) => {
@@ -32,8 +30,7 @@ export async function buildContractPdf(contract, profile = {}, currency = 'GBP')
   const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
   const fonts = await registerPdfFonts(pdf, profile);
   const PRIMARY = hexToRgb(profile.brand_primary, [27, 43, 75]);
-  const ACCENT = hexToRgb(profile.brand_accent, [169, 130, 47]);
-  const TEXT = pdfTextColor(profile);
+    const TEXT = pdfTextColor(profile);
   const M = 22;
   const right = 210 - M;
   const width = right - M;
@@ -47,35 +44,42 @@ export async function buildContractPdf(contract, profile = {}, currency = 'GBP')
     pdf.setTextColor(...(opts.color || TEXT));
   };
   const ensure = (needed) => { if (y + needed > bottom) { pdf.addPage(); y = 24; } };
-  const paragraph = (value, opts = {}) => {
-    setText(opts);
-    const lineH = (opts.size || 10) * 0.48;
-    pdf.splitTextToSize(String(value), opts.width || width).forEach((line) => {
-      ensure(lineH);
-      pdf.text(line, opts.x || M, y);
-      y += lineH;
-    });
-  };
 
   pdf.setProperties({ title: `${contract.service || 'Contract'}, ${contract.client_name || ''}`.trim(), creator: 'Vela' });
 
-  if (profile.logo) {
-    const size = await imageSize(profile.logo);
+  // Cover page: the studio's main colour, light logo (or name), the title and both parties.
+  const ON = hexToRgb(onColor(profile.brand_primary || '#1B2B4B'));
+  pdf.setFillColor(...PRIMARY);
+  pdf.rect(0, 0, 210, 297, 'F');
+  if (profile.logo_light) {
+    const size = await imageSize(profile.logo_light);
     if (size) {
-      const scale = Math.min(50 / size.w, 18 / size.h);
-      pdf.addImage(profile.logo, 'PNG', M, y - 6, size.w * scale, size.h * scale, undefined, 'FAST');
-      y += size.h * scale + 6;
+      const scale = Math.min(55 / size.w, 26 / size.h);
+      pdf.addImage(profile.logo_light, 'PNG', right - size.w * scale, 22, size.w * scale, size.h * scale, undefined, 'FAST');
     }
+  } else {
+    setText({ size: 18, heading: true, bold: true, color: ON });
+    pdf.splitTextToSize(studioName, 70).forEach((line, i) => pdf.text(line, right, 32 + i * 8, { align: 'right' }));
   }
-  paragraph(`Design services contract${contract.date ? `, ${formatDate(contract.date, longDate)}` : ''}`, { size: 9.5, color: ACCENT });
-  y += 3;
-  paragraph(contract.service || 'Contract', { size: 22, heading: true, bold: true, color: PRIMARY });
-  y += 1;
-  paragraph(`Between ${studioName} and ${contract.client_name || 'the Client'}`, { size: 10, color: MUTED });
-  y += 3;
-  pdf.setDrawColor(...LINE);
-  pdf.line(M, y, right, y);
-  y += 10;
+  setText({ size: 40, heading: true, color: ON });
+  const titleLines = pdf.splitTextToSize(coverTitle(contract, profile).toUpperCase(), 140);
+  const titleTop = 222 - titleLines.length * 16.5;
+  titleLines.forEach((line, i) => pdf.text(line, M, titleTop + i * 16.5));
+  const designer = profile.legal_name || profile.business_name || '';
+  const person = contract.client_contact || contract.client_name || '';
+  const cover = [
+    { x: M, label: 'Created by:', lines: [designer && `Contractor : ${designer}`, profile.business_name && `Company : ${profile.business_name}`] },
+    { x: 118, label: 'Created for:', lines: [person && `Client : ${person}`, contract.client_name && `Company : ${contract.client_name}`] },
+  ];
+  cover.forEach((col) => {
+    setText({ size: 10, bold: true, color: ON });
+    pdf.text(col.label, col.x, 252);
+    setText({ size: 10, color: ON });
+    col.lines.filter(Boolean).forEach((line, i) => pdf.text(line.toUpperCase(), col.x, 260 + i * 5.5, { maxWidth: 70 }));
+  });
+
+  pdf.addPage();
+  y = 26;
 
   // Sections: title on the left, terms on the right (as in a printed contract).
   const values = placeholderValues(contract, profile, currency);
@@ -186,12 +190,13 @@ export async function buildContractPdf(contract, profile = {}, currency = 'GBP')
     wrapped.forEach((l, i) => pdf.text(l, M + 5, y + 4 + i * 4.2));
   }
 
+  // Footer on every page after the cover.
   const pages = pdf.getNumberOfPages();
-  for (let p = 1; p <= pages; p += 1) {
+  for (let p = 2; p <= pages; p += 1) {
     pdf.setPage(p);
     setText({ size: 7.5, color: MUTED });
     pdf.text(`${studioName} Project Contract`, M, 287);
-    pdf.text(`${p} / ${pages}`, right, 287, { align: 'right' });
+    pdf.text(`${p - 1} / ${pages - 1}`, right, 287, { align: 'right' });
   }
   return pdf;
 }

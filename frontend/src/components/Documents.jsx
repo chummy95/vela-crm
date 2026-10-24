@@ -70,12 +70,7 @@ export function ContractDocument({ contract, studioName: nameProp, currency: cur
   const values = placeholderValues(contract, brand, currency);
   return (
     <article className="doc-preview contract-doc" aria-label="Contract" style={brandVars(brand)}>
-      {brand.logo && <img className="doc-logo" src={brand.logo} alt={studioName || 'Studio logo'} />}
-      <div className="doc-kicker">Design services contract{contract.date ? `, ${formatDate(contract.date, longDate)}` : ''}</div>
-      <h2 className="doc-title">{contract.service || 'Untitled contract'}</h2>
-      <div className="doc-for">
-        Between {studioName || 'the Studio'} and {contract.client_name || 'the Client'}
-      </div>
+      <ContractCover contract={contract} brand={brand} studioName={studioName} />
       {clauses.map((clause, index) => (
         <section key={clause.id || index} className="clause">
           <h3 className="clause-title">{index + 1}. {clause.title}</h3>
@@ -101,6 +96,38 @@ export function ContractDocument({ contract, studioName: nameProp, currency: cur
         </div>
       )}
     </article>
+  );
+}
+
+export function coverTitle(contract, brand = {}) {
+  return contract.cover_title || brand.contract_cover_title || 'Design Services Contract';
+}
+
+// The cover page: the studio's colour, logo, the contract title, and who it's between.
+function ContractCover({ contract, brand, studioName }) {
+  const designer = brand.legal_name || studioName;
+  const person = contract.client_contact || contract.client_name;
+  return (
+    <section className="contract-cover" aria-label="Cover">
+      <div className="cover-mark">
+        {brand.logo_light
+          ? <img src={brand.logo_light} alt={studioName || 'Studio logo'} />
+          : <span className="cover-name">{studioName || 'Your studio'}</span>}
+      </div>
+      <h2 className="cover-title">{coverTitle(contract, brand)}</h2>
+      <div className="cover-parties">
+        <div>
+          <div className="cover-label">Created by:</div>
+          {designer && <div>Contractor : {designer}</div>}
+          {studioName && <div>Company : {studioName}</div>}
+        </div>
+        <div>
+          <div className="cover-label">Created for:</div>
+          {person && <div>Client : {person}</div>}
+          {contract.client_name && <div>Company : {contract.client_name}</div>}
+        </div>
+      </div>
+    </section>
   );
 }
 
