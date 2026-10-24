@@ -22,20 +22,12 @@ import { auth, createSecondaryFirebaseServices, db, ensureFirebaseConfigured } f
 import { sanitizeWorkflow, workflowLabels } from './workflow';
 import { DEFAULT_STUDIO_PROFILE, formatInvoiceNumber, invoiceTotals, toNumber } from './invoices';
 import { CUSTOM, DEFAULT_BRAND, fontOption, isHex } from './brand';
+import { STUDIO_ENQUIRY_TEMPLATE } from './intakeForm';
 
 export const USER_ROLES = {
   STUDIO: 'studio',
   CLIENT: 'client',
 };
-
-const DEFAULT_FORM_FIELDS = [
-  { label: 'Full Name', field_type: 'text', required: 1, options: '', sort_order: 0 },
-  { label: 'Email Address', field_type: 'email', required: 1, options: '', sort_order: 1 },
-  { label: 'Brand / Business Name', field_type: 'text', required: 1, options: '', sort_order: 2 },
-  { label: 'Service Interested In', field_type: 'select', required: 1, options: 'Brand Identity,Packaging Design,Web Design,Full Suite', sort_order: 3 },
-  { label: 'Tell me about your project', field_type: 'textarea', required: 1, options: '', sort_order: 4 },
-  { label: 'Project Budget', field_type: 'select', required: 0, options: '£1,500–£3,000,£3,000–£5,000+', sort_order: 5 },
-];
 
 function now() {
   return new Date().toISOString();
@@ -1219,55 +1211,87 @@ export const eventsAPI = {
   },
 };
 
+function cleanFormConfig(body = {}) {
+  const fields = (Array.isArray(body.fields) ? body.fields : [])
+    .map((f, index) => {
+      const choices = (Array.isArray(f.choices) ? f.choices : String(f.options || '').split(','))
+        .map((c) => text(c).slice(0, 200)).filter(Boolean).slice(0, 30);
+      return {
+        id: text(f.id).slice(0, 40) || `q${index}`,
+        label: text(f.label).slice(0, 300),
+        help: text(f.help).slice(0, 500),
+        field_type: ['text', 'email', 'phone', 'textarea', 'radio', 'checkboxes', 'select', 'date'].includes(f.field_type) ? f.field_type : 'text',
+        required: Boolean(f.required),
+        choices,
+        options: choices.join(','),
+        allow_other: Boolean(f.allow_other),
+        sort_order: index,
+      };
+    })
+    .filter((f) => f.label)
+    .slice(0, 60);
+  const header = String(body.header_image || '');
+  if (header && !/^data:image\/(png|jpeg);base64,/.test(header)) throw new Error('Upload the header as an image.');
+  if (header.length > 720000) throw new Error('That header image is too large.');
+  return {
+    fields,
+    title: text(body.title).slice(0, 200),
+    intro: String(body.intro || '').replace(/\r\n/g, '\n').slice(0, 3000),
+    thanks: String(body.thanks || '').replace(/\r\n/g, '\n').slice(0, 1000),
+    header_image: header,
+  };
+}
+
 export const formsAPI = {
-  async getFields() {
+  // The studio's enquiry form: questions, header image, title, intro and thank-you message.
+  async getConfig() {
     const session = await requireStudioSession();
     const snapshot = await getDoc(doc(db, 'form_configs', session.firebaseUser.uid));
-    if (!snapshot.exists()) {
-      return DEFAULT_FORM_FIELDS;
-    }
-    return snapshot.data().fields || DEFAULT_FORM_FIELDS;
+    const data = snapshot.exists() ? snapshot.data() : STUDIO_ENQUIRY_TEMPLATE;
+    // Forms saved before the builder had a title only stored questions.
+    const legacy = snapshot.exists() && !('title' in data);
+    return { ...data, has_saved: snapshot.exists(), legacy, fields: data.fields || STUDIO_ENQUIRY_TEMPLATE.fields };
   },
 
-  async saveFields(fields) {
+  // Saves the form. The studio's brand (colours, fonts, name) is copied in too, because the
+  // public page can't read the studio's private settings.
+  async saveConfig(body) {
     const session = await requireStudioSession();
-    const payload = fields
-      .map((field, index) => ({
-        label: text(field.label),
-        field_type: text(field.field_type) || 'text',
-        required: field.required ? 1 : 0,
-        options: Array.isArray(field.options)
-          ? field.options.map((option) => text(option)).filter(Boolean).join(',')
-          : text(field.options),
-        sort_order: index,
-      }))
-      .filter((field) => field.label);
+    const uid = session.firebaseUser.uid;
+    const clean = cleanFormConfig(body);
+    const profile = await studioProfileAPI.get(uid).catch(() => ({}));
+    const brand = {
+      business_name: text(profile.business_name || session.profile.studio_name).slice(0, 200),
+      primary: profile.brand_primary || '',
+      accent: profile.brand_accent || '',
+      heading_font: profile.heading_font && profile.heading_font !== 'custom' ? profile.heading_font : '',
+      body_font: profile.body_font && profile.body_font !== 'custom' ? profile.body_font : '',
+    };
+    const payload = { user_id: uid, ...clean, brand, updated_at: now() };
+    await setDoc(doc(db, 'form_configs', uid), payload);
+    return { ...payload, has_saved: true };
+  },
 
-    await setDoc(doc(db, 'form_configs', session.firebaseUser.uid), {
-      user_id: session.firebaseUser.uid,
-      fields: payload,
-      updated_at: now(),
-    });
+  async getPublicConfig(userId) {
+    ensureFirebaseConfigured();
+    const targetUserId = text(userId);
+    if (!targetUserId) throw new Error('Form owner is missing.');
+    const snapshot = await getDoc(doc(db, 'form_configs', targetUserId));
+    const data = snapshot.exists() ? snapshot.data() : STUDIO_ENQUIRY_TEMPLATE;
+    return { ...data, fields: data.fields || STUDIO_ENQUIRY_TEMPLATE.fields };
+  },
 
-    return { success: true, fields: payload };
+  async getFields() {
+    return (await this.getConfig()).fields;
+  },
+
+  async getPublicFields(userId) {
+    return (await this.getPublicConfig(userId)).fields;
   },
 
   async submissions() {
     const rows = await listAccessibleDocs('form_submissions');
     return rows.sort((a, b) => compareDatesDesc(a, b, 'submitted_at'));
-  },
-
-  async getPublicFields(userId) {
-    ensureFirebaseConfigured();
-    const targetUserId = text(userId);
-    if (!targetUserId) {
-      throw new Error('Form owner is missing.');
-    }
-    const snapshot = await getDoc(doc(db, 'form_configs', targetUserId));
-    if (!snapshot.exists()) {
-      return DEFAULT_FORM_FIELDS;
-    }
-    return snapshot.data().fields || DEFAULT_FORM_FIELDS;
   },
 
   async submitPublic(userId, data) {
@@ -1281,8 +1305,9 @@ export const formsAPI = {
     }
     const sanitizedData = Object.fromEntries(
       Object.entries(data)
-        .map(([key, value]) => [text(key), text(value)])
+        .map(([key, value]) => [text(key).slice(0, 80), String(value ?? '').replace(/\r\n/g, '\n').trim().slice(0, 5000)])
         .filter(([key, value]) => key && value)
+        .slice(0, 80)
     );
     if (!Object.keys(sanitizedData).length) {
       throw new Error('Please complete the form before submitting.');

@@ -1,138 +1,237 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { formsAPI } from '../utils/api';
+import { brandVars, loadBrandFonts } from '../utils/brand';
+import { fieldName, fillIntro, normalizeField } from '../utils/intakeForm';
 
-function fieldName(field, index) {
-  const base = (field.label || `field_${index + 1}`).trim().toLowerCase();
-  return base.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `field_${index + 1}`;
+const OTHER = '__other__';
+
+function brandProfile(brand = {}) {
+  return {
+    brand_primary: brand.primary || undefined,
+    brand_accent: brand.accent || undefined,
+    heading_font: brand.heading_font || '',
+    body_font: brand.body_font || '',
+  };
 }
 
-function initialValues(fields) {
-  return Object.fromEntries(fields.map((field, index) => [fieldName(field, index), '']));
+// One question, as the visitor answers it.
+function Question({ field, index, value, other, onChange, onOther, invalid }) {
+  const id = `pf-${index}`;
+  const choices = field.choices;
+  const label = (
+    <>
+      {field.label}
+      {field.required && <span className="pq-req" aria-hidden="true"> *</span>}
+    </>
+  );
+  const help = field.help ? <p className="pq-help" id={`${id}-help`}>{field.help}</p> : null;
+  const describedBy = field.help ? `${id}-help` : undefined;
+
+  if (field.field_type === 'checkboxes' || field.field_type === 'radio') {
+    const many = field.field_type === 'checkboxes';
+    const selected = many ? (Array.isArray(value) ? value : []) : value;
+    const toggle = (choice) => {
+      if (!many) { onChange(choice); return; }
+      onChange(selected.includes(choice) ? selected.filter((c) => c !== choice) : [...selected, choice]);
+    };
+    const isOn = (choice) => (many ? selected.includes(choice) : selected === choice);
+    return (
+      <fieldset className={`pq${invalid ? ' invalid' : ''}`} aria-describedby={describedBy}>
+        <legend className="pq-label">{label}</legend>
+        {help}
+        <div className="pq-choices">
+          {choices.map((choice) => (
+            <label key={choice} className="pq-choice">
+              <input type={many ? 'checkbox' : 'radio'} name={id} checked={isOn(choice)} onChange={() => toggle(choice)} />
+              <span>{choice}</span>
+            </label>
+          ))}
+          {field.allow_other && (
+            <label className="pq-choice pq-other">
+              <input type={many ? 'checkbox' : 'radio'} name={id} checked={isOn(OTHER)} onChange={() => toggle(OTHER)} />
+              <span>Other:</span>
+              <input
+                className="pq-input"
+                aria-label={`${field.label}: other`}
+                value={other || ''}
+                onChange={(e) => { onOther(e.target.value); if (!isOn(OTHER) && e.target.value) toggle(OTHER); }}
+              />
+            </label>
+          )}
+        </div>
+        {invalid && <p className="pq-error">{invalid}</p>}
+      </fieldset>
+    );
+  }
+
+  return (
+    <div className={`pq${invalid ? ' invalid' : ''}`}>
+      <label className="pq-label" htmlFor={id}>{label}</label>
+      {help}
+      {field.field_type === 'textarea' && (
+        <textarea id={id} className="pq-input pq-area" rows={3} value={value || ''} onChange={(e) => onChange(e.target.value)} required={field.required} aria-describedby={describedBy} placeholder="Your answer" />
+      )}
+      {field.field_type === 'select' && (
+        <select id={id} className="pq-input pq-select" value={value || ''} onChange={(e) => onChange(e.target.value)} required={field.required} aria-describedby={describedBy}>
+          <option value="">Choose</option>
+          {choices.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      )}
+      {!['textarea', 'select'].includes(field.field_type) && (
+        <input
+          id={id}
+          className="pq-input"
+          type={{ email: 'email', phone: 'tel', date: 'date' }[field.field_type] || 'text'}
+          autoComplete={field.field_type === 'email' ? 'email' : field.field_type === 'phone' ? 'tel' : /^your name$|full name/i.test(field.label) ? 'name' : undefined}
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value)}
+          required={field.required}
+          aria-describedby={describedBy}
+          placeholder="Your answer"
+        />
+      )}
+      {invalid && <p className="pq-error">{invalid}</p>}
+    </div>
+  );
 }
 
 export default function PublicForm() {
   const { userId = '' } = useParams();
-  const [fields, setFields] = useState([]);
+  const [config, setConfig] = useState(null);
   const [values, setValues] = useState({});
+  const [others, setOthers] = useState({});
+  const [missing, setMissing] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
-  const sortedFields = useMemo(
-    () => fields.slice().sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0)),
-    [fields]
-  );
-
   useEffect(() => {
     let active = true;
-
-    formsAPI
-      .getPublicFields(userId)
-      .then((fieldRows) => {
-        if (!active) {
-          return;
-        }
-        setFields(fieldRows);
-        setValues(initialValues(fieldRows));
-        setError('');
+    formsAPI.getPublicConfig(userId)
+      .then((c) => {
+        if (!active) return;
+        setConfig(c);
+        loadBrandFonts(brandProfile(c.brand));
+        const name = c.brand?.business_name;
+        if (name) document.title = `${c.title || 'Enquiry'}, ${name}`;
       })
-      .catch((err) => {
-        if (active) {
-          setError(err.message);
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
+      .catch((err) => { if (active) setError(err.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [userId]);
+
+  const fields = useMemo(() => (config?.fields || []).map(normalizeField), [config]);
+
+  function answerFor(field, index) {
+    const key = fieldName(field, index);
+    const value = values[key];
+    const other = (others[key] || '').trim();
+    if (field.field_type === 'checkboxes') {
+      const list = (Array.isArray(value) ? value : []).map((v) => (v === OTHER ? (other ? `Other: ${other}` : '') : v)).filter(Boolean);
+      return list.join(', ');
+    }
+    if (value === OTHER) return other ? `Other: ${other}` : '';
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  function problemWith(field, index) {
+    const answer = answerFor(field, index);
+    if (!answer) return field.required ? 'This question needs an answer.' : '';
+    if (field.field_type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(answer)) return 'Enter a valid email address.';
+    return '';
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
+    const blank = fields.map((f, i) => {
+      const answer = answerFor(f, i);
+      if (f.required && !answer) return i;
+      if (answer && f.field_type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(answer)) return i;
+      return -1;
+    }).filter((i) => i >= 0);
+    setMissing(blank);
+    if (blank.length) {
+      document.getElementById(`pf-${blank[0]}`)?.focus?.();
+      document.querySelectorAll('.pq.invalid')[0]?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      setError('Please check the questions marked in red.');
+      return;
+    }
+    const data = Object.fromEntries(fields.map((f, i) => [fieldName(f, i), answerFor(f, i)]).filter(([, v]) => v));
     try {
       setSubmitting(true);
-      await formsAPI.submitPublic(userId, values);
-      setSubmitted(true);
       setError('');
-      setValues(initialValues(sortedFields));
-    } catch (submitError) {
-      setError(submitError.message);
+      await formsAPI.submitPublic(userId, data);
+      setSubmitted(true);
+      setValues({});
+      setOthers({});
+      window.scrollTo?.({ top: 0, behavior: 'smooth' });
+      document.querySelector('.public-form')?.scrollTo?.({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      setError(err.message);
     } finally {
       setSubmitting(false);
     }
   }
 
-  const setValue = (name) => (event) => setValues((current) => ({ ...current, [name]: event.target.value }));
+  const brand = config?.brand || {};
+  const studioName = brand.business_name || '';
+  const style = brandVars(brandProfile(brand));
 
   return (
-    <div className="public-form">
+    <div className="public-form branded" style={style}>
       <div className="public-form-inner">
-        <header style={{ marginBottom: 28 }}>
-          <h1 className="h-display" style={{ fontSize: 36 }}>Tell us about your project</h1>
-          <p className="lede" style={{ marginTop: 10 }}>A few details help the studio understand what you need. You’ll hear back personally, usually within two working days.</p>
-        </header>
+        {config?.header_image && (
+          <div className="pf-header"><img src={config.header_image} alt={studioName || 'Studio header'} /></div>
+        )}
 
-        <div className="panel" style={{ padding: 28 }}>
+        <div className="pf-card pf-intro">
           {loading && <div className="muted">Loading the form…</div>}
-          {!loading && error && <div className="form-error" role="alert">{error}</div>}
-
-          {!loading && submitted && (
-            <div role="status">
-              <h2 className="h-section">Thank you, your enquiry is in.</h2>
-              <p className="muted" style={{ marginTop: 6 }}>The studio will read it and reply to the email you gave.</p>
-              <button className="btn bg" type="button" style={{ marginTop: 18 }} onClick={() => setSubmitted(false)}>Send another enquiry</button>
-            </div>
+          {!loading && config && (
+            <>
+              <h1 className="pf-title">{config.title || 'Tell us about your project'}</h1>
+              {config.intro && <div className="pf-text">{fillIntro(config.intro, studioName)}</div>}
+            </>
           )}
-
-          {!loading && !submitted && sortedFields.length > 0 && (
-            <form onSubmit={handleSubmit}>
-              {sortedFields.map((field, index) => {
-                const name = fieldName(field, index);
-                const id = `pf-${name}`;
-                const isRequired = Boolean(field.required);
-                const options = String(field.options || '').split(',').map((o) => o.trim()).filter(Boolean);
-                return (
-                  <div className="fc" key={name} style={{ marginBottom: 18 }}>
-                    <label className="fc-label" htmlFor={id} style={{ fontSize: 13.5, color: 'var(--ink)' }}>
-                      {field.label}{!isRequired && <span className="faint" style={{ fontWeight: 400 }}> (optional)</span>}
-                    </label>
-                    {field.field_type === 'textarea' && (
-                      <textarea id={id} className="fi" rows="5" value={values[name] || ''} onChange={setValue(name)} required={isRequired} style={{ minHeight: 130 }} />
-                    )}
-                    {field.field_type === 'select' && (
-                      <select id={id} className="fi fsel" value={values[name] || ''} onChange={setValue(name)} required={isRequired}>
-                        <option value="">Choose one</option>
-                        {options.map((o) => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                    )}
-                    {!['textarea', 'select'].includes(field.field_type) && (
-                      <input
-                        id={id}
-                        className="fi"
-                        type={field.field_type === 'email' ? 'email' : 'text'}
-                        autoComplete={field.field_type === 'email' ? 'email' : /name/i.test(field.label) ? 'name' : undefined}
-                        value={values[name] || ''}
-                        onChange={setValue(name)}
-                        required={isRequired}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-              <button className="btn bp" type="submit" disabled={submitting} style={{ padding: '11px 20px', fontSize: 14 }}>
-                {submitting ? 'Sending…' : 'Send enquiry'}
-              </button>
-            </form>
-          )}
+          {!loading && !submitted && fields.some((f) => f.required) && <p className="pf-required-note">* Indicates required question</p>}
         </div>
-        <p className="faint" style={{ fontSize: 12, marginTop: 18, textAlign: 'center' }}>Sent securely with Vela</p>
+
+        {!loading && submitted && (
+          <div className="pf-card" role="status">
+            <h2 className="pf-title" style={{ fontSize: 24 }}>Thank you</h2>
+            <div className="pf-text">{config?.thanks || 'Your enquiry is in. The studio will be in touch soon.'}</div>
+            <button className="pf-link" type="button" onClick={() => setSubmitted(false)}>Send another response</button>
+          </div>
+        )}
+
+        {!loading && !submitted && fields.length > 0 && (
+          <form onSubmit={handleSubmit} noValidate>
+            {fields.map((field, index) => {
+              const key = fieldName(field, index);
+              return (
+                <div key={field.id || key} className="pf-card">
+                  <Question
+                    field={field}
+                    index={index}
+                    value={values[key] ?? (field.field_type === 'checkboxes' ? [] : '')}
+                    other={others[key]}
+                    invalid={missing.includes(index) ? problemWith(field, index) : ''}
+                    onChange={(v) => setValues((cur) => ({ ...cur, [key]: v }))}
+                    onOther={(v) => setOthers((cur) => ({ ...cur, [key]: v }))}
+                  />
+                </div>
+              );
+            })}
+            {error && <div className="form-error" role="alert" style={{ marginTop: 4 }}>{error}</div>}
+            <div className="pf-actions">
+              <button className="pf-submit" type="submit" disabled={submitting}>{submitting ? 'Sending…' : 'Submit'}</button>
+              <button className="pf-link" type="button" onClick={() => { setValues({}); setOthers({}); setMissing([]); setError(''); }}>Clear form</button>
+            </div>
+          </form>
+        )}
+        {!loading && !config && error && <div className="form-error" role="alert">{error}</div>}
+        <p className="faint" style={{ fontSize: 12, marginTop: 22, textAlign: 'center' }}>Sent securely with Vela</p>
       </div>
     </div>
   );

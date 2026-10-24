@@ -4,6 +4,7 @@ import { brandStrategyStarter, projectFeedbackStarter } from '../utils/questionn
 import { sanitizeWorkflow } from '../utils/workflow';
 import { DEFAULT_STUDIO_PROFILE, formatInvoiceNumber, invoiceTotals } from '../utils/invoices';
 import { DESIGN_CONTRACT_TEMPLATE } from '../utils/contractTemplate';
+import { STUDIO_ENQUIRY_TEMPLATE } from '../utils/intakeForm';
 
 export const USER_ROLES = { STUDIO: 'studio', CLIENT: 'client' };
 export function normalizeRole(value) {
@@ -57,7 +58,7 @@ const db = {
     { id: 'e3', client_id: 'c3', client_name: 'Saha Retreats', title: 'Design concepts review', event_type: 'Review', date: day(6), time: '10:00', duration: '60', meeting_link: '', color: '#B07A4A', created_at: iso(day(-1)) },
   ],
   submissions: [
-    { id: 's1', data: { 'Full Name': 'Reem Al-Qahtani', 'Email Address': 'reem@darreem.sa', 'Tell me about your project': 'We are launching a modest-wear atelier in Riyadh next spring and need a full identity, packaging for our gift boxes and a simple website.', 'Brand / Business Name': 'Dar Reem Atelier', 'Service Interested In': 'Full Suite', 'Project Budget': '£3,000–£5,000+' }, submitted_at: iso(day(-1)) },
+    { id: 's1', data: { your_name: 'Reem Al-Qahtani', your_location: 'Riyadh, Saudi Arabia', your_email_address: 'reem@darreem.sa', instagram_handle_if_any: '@darreem.atelier', your_business_name: 'Dar Reem Atelier', tell_us_more_about_your_business_briefly_describe_your_product_or_service: 'A modest-wear atelier launching in Riyadh next spring. Made-to-order abayas and occasion wear in natural fabrics.', what_do_you_need_help_with_and_what_are_you_hoping_we_achieve_together: 'A full identity that feels quietly luxurious, packaging for our gift boxes, and a simple website to take appointments.', what_service_are_you_most_interested_in: 'Brand Strategy + Brand Identity, Packaging Design, Website Design', what_investment_range_feels_most_aligned_with_you_our_branding_packages_start_at: '$4500 - $6000', when_are_you_hoping_to_begin_working_together: 'January', how_did_you_hear_about_us: 'Instagram, Other: a friend’s launch' }, submitted_at: iso(day(-1)) },
     { id: 's2', data: { full_name: 'Sophie Grant', email_address: 'sophie@fernandfield.co.uk', brand_business_name: 'Fern & Field', service_interested_in: 'Brand Identity', project_budget: '£1,500–£3,000' }, submitted_at: iso(day(-4)) },
   ],
   formFields: [
@@ -316,10 +317,20 @@ export const contractsAPI = {
 };
 export const eventsAPI = crud('events');
 
+let formConfig = null;
+try { formConfig = JSON.parse(localStorage.getItem('vela-demo-form') || 'null'); } catch { formConfig = null; }
 export const formsAPI = {
+  async getConfig() { return delay(formConfig ? { ...formConfig, has_saved: true } : { ...STUDIO_ENQUIRY_TEMPLATE, has_saved: false }); },
+  async saveConfig(body) {
+    formConfig = { ...body, fields: body.fields.filter((f) => f.label), brand: { business_name: studioProfile.business_name, primary: studioProfile.brand_primary, accent: studioProfile.brand_accent, heading_font: studioProfile.heading_font, body_font: studioProfile.body_font } };
+    try { localStorage.setItem('vela-demo-form', JSON.stringify(formConfig)); } catch { /* demo only */ }
+    return delay({ ...formConfig, has_saved: true });
+  },
+  async getPublicConfig() {
+    return delay(formConfig || { ...STUDIO_ENQUIRY_TEMPLATE, brand: { business_name: studioProfile.business_name, primary: studioProfile.brand_primary, accent: studioProfile.brand_accent, heading_font: studioProfile.heading_font, body_font: studioProfile.body_font } });
+  },
   async getFields() { return delay(db.formFields); },
   async getPublicFields() { return delay(db.formFields); },
-  async saveFields(fields) { db.formFields = fields.filter((f) => f.label); return delay({ success: true, fields: db.formFields }); },
   async submissions() { return delay(scopeClientId ? [] : db.submissions); },
   async submitPublic(_userId, data) {
     db.submissions.unshift({ id: id(), data, submitted_at: new Date().toISOString() });
