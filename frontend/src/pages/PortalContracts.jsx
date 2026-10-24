@@ -9,7 +9,8 @@ import { useAuth } from '../hooks/useAuth';
 import { contractsAPI } from '../utils/api';
 import { formatDate, formatMoney } from '../utils/format';
 import { AGREEMENT_TEXT, contractFingerprint, signedLabel } from '../utils/contracts';
-import { downloadContractPdf } from '../utils/contractPdf';
+import { buildContractPdf, contractFileName } from '../utils/contractPdf';
+import PdfPreview from '../components/PdfPreview';
 
 // Accept and sign: agree to the terms, add your name and signature.
 function SignPanel({ contract, brand, onSigned }) {
@@ -79,13 +80,9 @@ export default function PortalContracts() {
   }, []);
 
   const selected = useMemo(() => contracts.find((c) => c.id === routeId) || null, [contracts, routeId]);
-  const [downloading, setDownloading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [justSigned, setJustSigned] = useState(false);
 
-  async function download() {
-    setDownloading(true);
-    try { await downloadContractPdf(selected, brand, brand.currency); } catch (err) { setError(err.message || 'Couldn’t create the PDF.'); } finally { setDownloading(false); }
-  }
 
   if (routeId) {
     return (
@@ -95,7 +92,7 @@ export default function PortalContracts() {
           {selected && (
             <div className="tb-r">
               <Pill status={selected.signed ? 'signed' : 'unsigned'} label={signedLabel(selected)} />
-              <button className="btn bg" type="button" disabled={downloading} onClick={download}><Icon name="download" />{downloading ? 'Preparing…' : selected.signed ? 'Download signed copy' : 'Download PDF'}</button>
+              <button className="btn bg" type="button" onClick={() => setPreviewOpen(true)}><Icon name="proposal" />{selected.signed ? 'View signed copy' : 'View PDF'}</button>
               {!selected.signed && <a className="btn bp" href="#sign" onClick={(e) => { e.preventDefault(); document.getElementById('sign')?.scrollIntoView({ behavior: 'smooth' }); }}>Review and sign</a>}
             </div>
           )}
@@ -110,6 +107,15 @@ export default function PortalContracts() {
               </div>
             )}
             {selected ? <ContractDocument contract={selected} brand={brand} /> : <div className="panel empty" style={{ padding: 40 }}>{loaded ? 'This contract isn’t available.' : 'Loading…'}</div>}
+            {selected && (
+              <PdfPreview
+                open={previewOpen}
+                onClose={() => setPreviewOpen(false)}
+                title={selected.signed ? 'Signed contract' : 'Contract'}
+                build={() => buildContractPdf(selected, brand, brand.currency)}
+                fileName={contractFileName(selected, brand)}
+              />
+            )}
             {selected && !selected.signed && (
               <SignPanel
                 contract={selected}

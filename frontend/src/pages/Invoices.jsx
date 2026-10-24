@@ -9,7 +9,8 @@ import { useAuth } from '../hooks/useAuth';
 import { clientsAPI, invoicesAPI, paymentsAPI, projectsAPI, studioProfileAPI } from '../utils/api';
 import { formatDate, formatMoney, isOverdue, relativeDay, stageLabel } from '../utils/format';
 import { DEFAULT_STUDIO_PROFILE, money, toNumber } from '../utils/invoices';
-import { downloadInvoicePdf } from '../utils/invoicePdf';
+import { buildInvoicePdf, invoiceFileName } from '../utils/invoicePdf';
+import PdfPreview from '../components/PdfPreview';
 
 const FILTERS = [
   { key: 'open', label: 'Unpaid' },
@@ -36,7 +37,7 @@ export default function Invoices() {
   const [editor, setEditor] = useState(null); // { mode: 'create' | 'edit', initial }
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const currency = profile.currency || user?.currency || 'GBP';
 
   useEffect(() => {
@@ -144,17 +145,6 @@ export default function Invoices() {
     }
   }
 
-  async function download(invoice) {
-    setDownloading(true);
-    try {
-      await downloadInvoicePdf(invoice, profile);
-    } catch (err) {
-      setPageError(err.message || 'Couldn’t create the PDF.');
-    } finally {
-      setDownloading(false);
-    }
-  }
-
   const editorModal = (
     <InvoiceEditor
       open={Boolean(editor)}
@@ -198,7 +188,7 @@ export default function Invoices() {
             <button className="btn bq" type="button" disabled={busy} onClick={handleDelete}>{confirmDelete ? 'Yes, delete it' : 'Delete'}</button>
             {confirmDelete && <button className="btn bq" type="button" onClick={() => setConfirmDelete(false)}>Keep</button>}
             <button className="btn bg" type="button" onClick={() => setEditor({ mode: 'edit', initial: invoiceToForm(selected) })}><Icon name="edit" />Edit</button>
-            <button className="btn bg" type="button" disabled={downloading} onClick={() => download(selected)}><Icon name="download" />{downloading ? 'Preparing…' : 'Download PDF'}</button>
+            <button className="btn bg" type="button" onClick={() => setPreviewOpen(true)}><Icon name="proposal" />View PDF</button>
             <button className={`btn ${paid ? 'bg' : 'bp'}`} type="button" disabled={busy} onClick={() => toggleStatus(selected)}><Icon name="check" />{paid ? 'Mark as unpaid' : 'Mark as paid'}</button>
           </div>
         </div>
@@ -238,6 +228,13 @@ export default function Invoices() {
           </div>
         </div>
         {editorModal}
+        <PdfPreview
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          title={`${selected.number ? `Invoice ${selected.number}` : 'Invoice'}${selected.client_name ? `, ${selected.client_name}` : ''}`}
+          build={() => buildInvoicePdf(selected, profile)}
+          fileName={invoiceFileName(selected, profile)}
+        />
       </>
     );
   }
