@@ -725,3 +725,35 @@ a.file-row:hover { border-color: #CFC6B6; text-decoration: none; }
 .doc-sign .sig-name { color: var(--doc-text, var(--ink)); font-weight: 600; font-size: 13.5px; }
 .doc-audit { margin-top: 26px; padding: 14px 16px; border-radius: var(--r-sm); background: var(--paper); font-family: var(--doc-body, var(--font-body)); font-size: 12px; line-height: 1.6; color: var(--text-2); word-break: break-word; }
 .doc-audit b { color: var(--ink); font-weight: 600; }
+
+/* ── Contract layout: section title on the left, terms on the right ── */
+.contract-doc .clause { display: grid; grid-template-columns: minmax(0, 32%) minmax(0, 1fr); gap: 24px; margin-top: 30px; }
+.contract-doc .clause-title { margin: 0; font-family: var(--doc-heading, var(--font-heading)); font-size: 21px; line-height: 1.2; font-weight: 700; color: var(--doc-primary, var(--ink)); }
+.contract-doc .clause-body { font-family: var(--doc-body, var(--font-heading)); font-size: 14.5px; line-height: 1.6; }
+.contract-doc .clause-body p { font-size: inherit; margin: 0 0 12px; max-width: none; white-space: normal; }
+.contract-doc .clause-body ul { font-size: inherit; margin: 0 0 12px; padding-left: 18px; }
+.contract-doc .clause-sub { margin: 14px 0 2px; font-family: var(--doc-heading, var(--font-heading)); font-size: 14.5px; font-weight: 700; color: var(--doc-primary, var(--ink)); }
+.contract-doc .clause-sub:first-child { margin-top: 0; }
+.ph-missing { background: var(--warn-bg); color: var(--warn); border-radius: 4px; padding: 0 5px; font-family: var(--font-body); font-size: .88em; white-space: nowrap; }
+.doc-sign .sig-label { font-family: var(--doc-heading, var(--font-heading)); font-weight: 700; font-size: 14px; color: var(--doc-primary, var(--ink)); margin-bottom: 6px; }
+@media (max-width: 700px) {
+  .contract-doc .clause { grid-template-columns: 1fr; gap: 8px; margin-top: 24px; }
+  .contract-doc .clause-title { font-size: 19px; }
+}
+@media print { .ph-missing { background: none; color: inherit; } }
+.clauses-edit { display: grid; gap: 10px; }
+.clause-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.clause-item { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+.clause-item.open { border-color: #CFC6B6; }
+.clause-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; }
+.clause-toggle { flex: 1; text-align: left; background: none; border: none; padding: 8px 0; font: inherit; font-size: 14px; font-weight: 500; color: var(--ink); cursor: pointer; }
+.clause-tools { display: flex; }
+.clause-tools .mc:disabled { opacity: .35; cursor: default; }
+.clause-fields { padding: 4px 12px 14px; display: grid; }
+.clause-text { font-size: 13.5px; line-height: 1.55; resize: vertical; }
+.ph-help { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; background: var(--paper); }
+.ph-help summary { cursor: pointer; font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.ph-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ph-chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 10px; font-size: 12.5px; color: var(--ink); cursor: pointer; }
+.ph-chip:hover { border-color: var(--vela); color: var(--vela); }
+.ph-help code { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 12px; }

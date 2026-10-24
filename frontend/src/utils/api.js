@@ -654,7 +654,7 @@ export const projectsAPI = {
   },
 };
 
-const PROFILE_TEXT_FIELDS = ['business_name', 'address', 'email', 'phone', 'website', 'company_number', 'vat_number', 'currency', 'vat_label', 'invoice_prefix', 'bank_details', 'invoice_notes', 'payment_link'];
+const PROFILE_TEXT_FIELDS = ['legal_name', 'business_name', 'address', 'email', 'phone', 'website', 'company_number', 'vat_number', 'currency', 'vat_label', 'invoice_prefix', 'bank_details', 'invoice_notes', 'payment_link'];
 
 function cleanPaymentLink(value) {
   const link = text(value);
@@ -666,6 +666,18 @@ function cleanPaymentLink(value) {
   } catch {
     return '';
   }
+}
+
+// Contract sections: title and terms (markup and placeholders are kept as typed).
+function sanitizeClauses(clauses) {
+  return (Array.isArray(clauses) ? clauses : [])
+    .map((c, i) => ({
+      id: text(c.id).slice(0, 40) || `cl-${i}-${Math.random().toString(36).slice(2, 6)}`,
+      title: String(c.title || '').trim().slice(0, 120),
+      body: String(c.body || '').replace(/\r\n/g, '\n').slice(0, 8000),
+    }))
+    .filter((c) => c.title || c.body.trim())
+    .slice(0, 60);
 }
 
 const FONT_ROLES = ['heading', 'body'];
@@ -752,6 +764,7 @@ export const studioProfileAPI = {
     if (body.payment_terms_days !== undefined) payload.payment_terms_days = Math.max(0, Math.min(365, Math.round(toNumber(body.payment_terms_days))));
     if (body.next_invoice_number !== undefined) payload.next_invoice_number = Math.max(1, Math.round(toNumber(body.next_invoice_number)) || 1);
     if (body.card_payments !== undefined) payload.card_payments = Boolean(body.card_payments);
+    if (body.contract_clauses !== undefined) payload.contract_clauses = sanitizeClauses(body.contract_clauses);
     await setDoc(doc(db, 'studio_profiles', uid), payload, { merge: true });
     if (payload.currency || payload.business_name !== undefined) {
       const profileChanges = stripUndefinedValues({ currency: payload.currency || undefined, studio_name: payload.business_name || undefined });
@@ -1029,14 +1042,16 @@ export const contractsAPI = {
       client_name: client?.name || '',
       client_email: client?.email || email(body.client_email),
       client_address: text(body.client_address),
+      client_contact: text(body.client_contact) || client?.contact || '',
       service,
       value: text(body.value),
       start_date: text(body.start_date),
+      end_date: text(body.end_date),
       duration: text(body.duration),
       date: text(body.date),
       primary_color: text(body.primary_color) || '#1B2B4B',
       accent_color: text(body.accent_color) || '#C9A84C',
-      clauses: Array.isArray(body.clauses) ? body.clauses : [],
+      clauses: sanitizeClauses(body.clauses),
       signed: false,
       created_at: now(),
     };
@@ -1053,14 +1068,16 @@ export const contractsAPI = {
       client_name: body.client_id !== undefined ? client?.name || '' : undefined,
       client_email: body.client_id !== undefined ? client?.email || '' : (body.client_email !== undefined ? email(body.client_email) : undefined),
       client_address: body.client_address !== undefined ? text(body.client_address) : undefined,
+      client_contact: body.client_contact !== undefined ? text(body.client_contact) : undefined,
       service: body.service !== undefined ? text(body.service) : undefined,
       value: body.value !== undefined ? text(body.value) : undefined,
       start_date: body.start_date !== undefined ? text(body.start_date) : undefined,
+      end_date: body.end_date !== undefined ? text(body.end_date) : undefined,
       duration: body.duration !== undefined ? text(body.duration) : undefined,
       date: body.date !== undefined ? text(body.date) : undefined,
       primary_color: body.primary_color !== undefined ? text(body.primary_color) : undefined,
       accent_color: body.accent_color !== undefined ? text(body.accent_color) : undefined,
-      clauses: body.clauses !== undefined ? (Array.isArray(body.clauses) ? body.clauses : []) : undefined,
+      clauses: body.clauses !== undefined ? sanitizeClauses(body.clauses) : undefined,
       signed: body.signed !== undefined ? Boolean(body.signed) : undefined,
     });
     await updateDoc(doc(db, 'contracts', id), payload);

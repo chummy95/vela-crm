@@ -1,6 +1,6 @@
 // The contract as a PDF, with both signatures and the signature record, in the studio's brand.
-import { clauseText } from '../components/Documents';
 import { contractClauses, AGREEMENT_TEXT } from './contracts';
+import { fillClause, inlineRuns, parseClause, placeholderValues } from './contractTemplate';
 import { formatDate, formatMoney } from './format';
 import { hexToRgb, pdfTextColor, registerPdfFonts } from './brand';
 
@@ -63,34 +63,74 @@ export async function buildContractPdf(contract, profile = {}, currency = 'GBP')
     const size = await imageSize(profile.logo);
     if (size) {
       const scale = Math.min(50 / size.w, 18 / size.h);
-      pdf.addImage(profile.logo, 'PNG', M, y - 6, size.w * scale, size.h * scale);
+      pdf.addImage(profile.logo, 'PNG', M, y - 6, size.w * scale, size.h * scale, undefined, 'FAST');
       y += size.h * scale + 6;
     }
   }
-  paragraph(`Services agreement${contract.date ? `, ${formatDate(contract.date, longDate)}` : ''}`, { size: 9.5, color: ACCENT });
+  paragraph(`Design services contract${contract.date ? `, ${formatDate(contract.date, longDate)}` : ''}`, { size: 9.5, color: ACCENT });
   y += 3;
   paragraph(contract.service || 'Contract', { size: 22, heading: true, bold: true, color: PRIMARY });
   y += 1;
-  paragraph(`Between ${studioName} and ${contract.client_name || 'the Client'}${contract.client_address ? `, ${contract.client_address}` : ''}`, { size: 10, color: MUTED });
-  const terms = [
-    contract.start_date ? `Starting ${formatDate(contract.start_date, longDate)}` : '',
-    contract.duration ? `for ${contract.duration}` : '',
-  ].filter(Boolean).join(', ');
-  if (terms || contract.value) {
-    y += 2;
-    paragraph(`${terms}${terms && contract.value ? '. ' : ''}${contract.value ? `Total value ${formatMoney(contract.value, currency)}.` : ''}`, { size: 10, color: MUTED });
-  }
+  paragraph(`Between ${studioName} and ${contract.client_name || 'the Client'}`, { size: 10, color: MUTED });
   y += 3;
   pdf.setDrawColor(...LINE);
   pdf.line(M, y, right, y);
-  y += 9;
+  y += 10;
+
+  // Sections: title on the left, terms on the right (as in a printed contract).
+  const values = placeholderValues(contract, profile, currency);
+  const leftW = 46;
+  const bodyX = M + leftW + 6;
+  const bodyW = right - bodyX;
+  const lineH = 4.9;
+
+  // Writes one line of inline runs (bold and blanks) at x, wrapping words to width.
+  const writeRuns = (text, x, w, opts = {}) => {
+    const runs = inlineRuns(text).map((r) => ({ ...r, text: r.missing ? '__________' : r.text }));
+    let cx = x;
+    const newLine = () => { y += lineH; ensure(lineH); cx = x; };
+    runs.forEach((run) => {
+      setText({ size: opts.size || 10, bold: run.bold || opts.bold, heading: opts.heading, color: opts.color });
+      run.text.split(/(\s+)/).forEach((word) => {
+        if (!word) return;
+        const wordW = pdf.getTextWidth(word);
+        if (cx + wordW > x + w && cx > x && word.trim()) newLine();
+        if (cx === x && !word.trim()) return;
+        pdf.text(word, cx, y);
+        cx += wordW;
+      });
+    });
+    y += lineH;
+  };
 
   contractClauses(contract).forEach((clause, i) => {
-    ensure(16);
-    paragraph(`${i + 1}. ${clause.title || ''}`, { size: 12, heading: true, bold: true, color: PRIMARY });
-    y += 1.5;
-    paragraph(clauseText(clause, contract, currency), { size: 10.5 });
-    y += 6;
+    ensure(18);
+    const top = y;
+    // Title, wrapped in the left column.
+    setText({ size: 13, heading: true, bold: true, color: PRIMARY });
+    const titleLines = pdf.splitTextToSize(`${i + 1}. ${clause.title || ''}`, leftW);
+    titleLines.forEach((line, j) => pdf.text(line, M, top + j * 6));
+    const titleBottom = top + titleLines.length * 6;
+
+    parseClause(fillClause(clause.body, values)).forEach((block, bi) => {
+      if (block.type === 'sub') {
+        if (bi > 0) y += 2;
+        ensure(lineH * 2);
+        writeRuns(block.text, bodyX, bodyW, { bold: true, color: PRIMARY, heading: true });
+      } else if (block.type === 'list') {
+        block.items.forEach((item) => {
+          ensure(lineH);
+          setText({ size: 10 });
+          pdf.text('•', bodyX, y);
+          writeRuns(item, bodyX + 4, bodyW - 4);
+        });
+        y += 2;
+      } else {
+        block.lines.forEach((line) => { ensure(lineH); writeRuns(line, bodyX, bodyW); });
+        y += 2.5;
+      }
+    });
+    y = Math.max(y, titleBottom) + 6;
   });
 
   // Signatures
@@ -98,33 +138,35 @@ export async function buildContractPdf(contract, profile = {}, currency = 'GBP')
   y += 6;
   const colW = (width - 14) / 2;
   const blocks = [
-    { x: M, party: `For ${studioName}`, sig: contract.studio_signature },
-    { x: M + colW + 14, party: `For ${contract.client_name || 'the Client'}`, sig: contract.client_signature, note: contract.signed && !contract.client_signature ? 'Signed outside Vela' : '' },
+    { x: M, party: 'Client’s signature', who: contract.client_name, sig: contract.client_signature, note: contract.signed && !contract.client_signature ? 'Signed outside Vela' : '' },
+    { x: M + colW + 14, party: 'Designer’s signature', who: studioName, sig: contract.studio_signature },
   ];
   const sigTop = y;
   for (const b of blocks) {
+    setText({ size: 10.5, bold: true, heading: true, color: PRIMARY });
+    pdf.text(b.party, b.x, sigTop);
     if (b.sig?.image) {
       const size = await imageSize(b.sig.image);
       if (size) {
-        const scale = Math.min(colW / size.w, 22 / size.h);
-        pdf.addImage(b.sig.image, 'PNG', b.x, sigTop, size.w * scale, size.h * scale);
+        const scale = Math.min(colW / size.w, 20 / size.h);
+        pdf.addImage(b.sig.image, 'PNG', b.x, sigTop + 3, size.w * scale, size.h * scale, undefined, 'FAST');
       }
     }
     pdf.setDrawColor(...PRIMARY);
-    pdf.line(b.x, sigTop + 24, b.x + colW, sigTop + 24);
-    let by = sigTop + 29;
+    pdf.line(b.x, sigTop + 25, b.x + colW, sigTop + 25);
+    let by = sigTop + 30;
     if (b.sig) {
       setText({ size: 10, bold: true });
       pdf.text(`${b.sig.name}${b.sig.title ? `, ${b.sig.title}` : ''}`, b.x, by, { maxWidth: colW });
-      by += 5;
+    } else if (b.who) {
+      setText({ size: 10 });
+      pdf.text(b.who, b.x, by, { maxWidth: colW });
     }
+    by += 5;
     setText({ size: 9, color: MUTED });
-    pdf.text(b.party, b.x, by, { maxWidth: colW });
-    by += 4.5;
-    if (b.sig) pdf.text(stamp(b.sig.signed_at), b.x, by, { maxWidth: colW });
-    else if (b.note) pdf.text(b.note, b.x, by, { maxWidth: colW });
+    pdf.text(`Date: ${b.sig ? stamp(b.sig.signed_at) : b.note || ''}`, b.x, by, { maxWidth: colW });
   }
-  y = sigTop + 44;
+  y = sigTop + 42;
 
   // Signature record
   if (contract.client_signature) {
@@ -134,11 +176,12 @@ export async function buildContractPdf(contract, profile = {}, currency = 'GBP')
       contract.studio_signature ? `${contract.studio_signature.name} signed for ${studioName} on ${stamp(contract.studio_signature.signed_at)}.` : '',
       contract.signed_hash ? `Document fingerprint (SHA-256): ${contract.signed_hash}` : '',
     ].filter(Boolean);
-    ensure(30);
-    pdf.setFillColor(249, 247, 244);
     setText({ size: 8.5, color: MUTED });
     const wrapped = lines.flatMap((l) => pdf.splitTextToSize(l, width - 10));
     const boxH = wrapped.length * 4.2 + 8;
+    if (y + boxH > 280) { pdf.addPage(); y = 24; }
+    pdf.setFillColor(249, 247, 244);
+    setText({ size: 8.5, color: MUTED });
     pdf.rect(M, y - 2, width, boxH, 'F');
     wrapped.forEach((l, i) => pdf.text(l, M + 5, y + 4 + i * 4.2));
   }
@@ -147,7 +190,7 @@ export async function buildContractPdf(contract, profile = {}, currency = 'GBP')
   for (let p = 1; p <= pages; p += 1) {
     pdf.setPage(p);
     setText({ size: 7.5, color: MUTED });
-    pdf.text([studioName, contract.service, contract.client_name].filter(Boolean).join('  ·  '), M, 287);
+    pdf.text(`${studioName} Project Contract`, M, 287);
     pdf.text(`${p} / ${pages}`, right, 287, { align: 'right' });
   }
   return pdf;

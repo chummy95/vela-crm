@@ -59,7 +59,7 @@ export async function buildInvoicePdf(invoice, profile = {}) {
       const maxW = 60;
       const maxH = 22;
       const scale = Math.min(maxW / size.w, maxH / size.h);
-      pdf.addImage(profile.logo, 'PNG', M, y - 4, size.w * scale, size.h * scale);
+      pdf.addImage(profile.logo, 'PNG', M, y - 4, size.w * scale, size.h * scale, undefined, 'FAST');
     }
   } else {
     text(profile.business_name || 'Invoice', M, y + 6, { size: 16, bold: true, heading: true, color: PRIMARY });
