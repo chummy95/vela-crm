@@ -500,8 +500,25 @@ textarea.fi { resize: vertical; min-height: 72px; line-height: 1.6; }
 
 /* ── Auth ──────────────────────────────────────────────────── */
 .auth { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-columns: minmax(320px, 44%) 1fr; overflow-y: auto; height: 100vh; height: 100dvh; }
-.auth-brand { background: var(--ink); color: #F5F0E8; padding: 56px; display: flex; flex-direction: column; justify-content: space-between; }
+.auth-brand { position: relative; overflow: hidden; isolation: isolate; background: radial-gradient(120% 70% at 0% 100%, rgba(33, 64, 154, .55), transparent 60%), radial-gradient(90% 60% at 100% 0%, rgba(169, 130, 47, .12), transparent 55%), var(--ink); color: #F5F0E8; padding: 56px; display: flex; flex-direction: column; justify-content: space-between; }
+.auth-brand-logo, .auth-brand-line { position: relative; z-index: 1; }
+.auth-brand-logo { animation: velaDrop 1.1s cubic-bezier(.2, .8, .2, 1) both; }
 .auth-brand-line { font-family: var(--font-heading); font-size: 26px; line-height: 1.3; max-width: 22ch; color: #F5F0E8; }
+.auth-brand-line span { display: inline; animation: velaDrop .9s cubic-bezier(.2, .8, .2, 1) both; }
+.auth-brand-line span:nth-child(1) { animation-delay: .35s; }
+.auth-brand-line span:nth-child(2) { animation-delay: .5s; }
+.auth-brand-line span:nth-child(3) { animation-delay: .65s; }
+/* Rolling wordmarks, top to bottom */
+.vela-roll { position: absolute; inset: 0; z-index: 0; display: flex; justify-content: space-evenly; gap: 24px; padding: 0 24px; pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 16%, #000 36%, #000 58%, transparent 80%);
+          mask-image: linear-gradient(to bottom, transparent 16%, #000 36%, #000 58%, transparent 80%);
+  animation: velaFade 1.6s ease both .2s; }
+.vela-roll-col { flex: 0 1 var(--w); min-width: 0; height: 100%; overflow: hidden; opacity: var(--o); }
+.vela-roll-track { display: flex; flex-direction: column; gap: 64px; padding-bottom: 64px; will-change: transform; animation: velaRoll var(--speed) linear infinite; animation-delay: var(--offset); }
+@keyframes velaRoll { from { transform: translate3d(0, -50%, 0); } to { transform: translate3d(0, 0, 0); } }
+@keyframes velaDrop { from { opacity: 0; transform: translate3d(0, -28px, 0); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes velaFade { from { opacity: 0; } to { opacity: 1; } }
+.auth-enter { animation: velaDrop .8s cubic-bezier(.2, .8, .2, 1) both .15s; }
 .auth-main { display: flex; align-items: center; justify-content: center; padding: 40px 24px; background: var(--paper); }
 .auth-panel { width: 100%; max-width: 380px; }
 .auth-mobile-logo { display: none; margin-bottom: 24px; }
