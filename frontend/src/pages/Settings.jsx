@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
 import InvoiceDocument from '../components/InvoiceDocument';
 import { notifyAPI, paymentsAPI, studioProfileAPI } from '../utils/api';
+import { visibleOn } from '../hooks/useStudioTheme';
 import { CURRENCIES, DEFAULT_STUDIO_PROFILE, formatInvoiceNumber, resizeLogo } from '../utils/invoices';
 import { CUSTOM, DEFAULT_BRAND, FONT_GROUPS, FONT_OPTIONS, fontStack, isHex, loadBrandFonts, readFontFile } from '../utils/brand';
 
@@ -113,6 +114,23 @@ export default function Settings() {
   const [notif, setNotif] = useState(null);
   const [notifError, setNotifError] = useState('');
   const [testState, setTestState] = useState('');
+  const [logoOnDark, setLogoOnDark] = useState(false);
+  const [lightOnLight, setLightOnLight] = useState(false);
+
+  // A white logo is invisible on the pale box (and a dark one on the dark box), so flip the box.
+  useEffect(() => {
+    let active = true;
+    if (form.logo) visibleOn(form.logo, '#F9F7F4').then((ok) => { if (active) setLogoOnDark(!ok); });
+    else setLogoOnDark(false);
+    return () => { active = false; };
+  }, [form.logo]);
+  useEffect(() => {
+    let active = true;
+    const bg = isHex(form.brand_primary) ? form.brand_primary : '#1B2B4B';
+    if (form.logo_light) visibleOn(form.logo_light, bg).then((ok) => { if (active) setLightOnLight(!ok); });
+    else setLightOnLight(false);
+    return () => { active = false; };
+  }, [form.logo_light, form.brand_primary]);
 
   useEffect(() => {
     studioProfileAPI.get(undefined, { fresh: true }).then((p) => setForm({ ...DEFAULT_STUDIO_PROFILE, ...DEFAULT_BRAND, ...p })).catch((err) => setError(err.message)).finally(() => setLoaded(true));
@@ -157,6 +175,7 @@ export default function Settings() {
     try {
       const updated = await studioProfileAPI.save(form);
       setForm({ ...DEFAULT_STUDIO_PROFILE, ...DEFAULT_BRAND, ...updated });
+      window.dispatchEvent(new Event('vela-brand-updated'));
       if (notif) setNotif(await notifyAPI.saveSettings(notif));
       setSaved(true);
     } catch (err) {
@@ -187,9 +206,9 @@ export default function Settings() {
             <form id="settings-form" onSubmit={save}>
               <section className="panel settings-sec" aria-labelledby="s-brand">
                 <h2 id="s-brand" className="card-title">Brand</h2>
-                <p className="muted settings-lede">Your logo, colours and fonts on every invoice, proposal and contract your clients see.</p>
+                <p className="muted settings-lede">Your logo, colours and fonts on every invoice, proposal and contract, in your Vela workspace and in your clients’ portal.</p>
                 <div className="logo-row">
-                  <div className="logo-box">{form.logo ? <img src={form.logo} alt="Your logo" /> : <span className="faint">No logo yet</span>}</div>
+                  <div className={`logo-box${logoOnDark ? ' dark' : ''}`} style={logoOnDark ? { background: '#2B2B2B' } : undefined}>{form.logo ? <img src={form.logo} alt="Your logo" /> : <span className="faint">No logo yet</span>}</div>
                   <div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <button type="button" className="btn bg bsm" onClick={() => fileRef.current?.click()}><Icon name="plus" size={15} />{form.logo ? 'Replace logo' : 'Upload logo'}</button>
@@ -200,7 +219,7 @@ export default function Settings() {
                   </div>
                 </div>
                 <div className="logo-row">
-                  <div className="logo-box dark" style={{ background: isHex(form.brand_primary) ? form.brand_primary : '#1B2B4B' }}>
+                  <div className="logo-box dark" style={{ background: lightOnLight ? '#F9F7F4' : isHex(form.brand_primary) ? form.brand_primary : '#1B2B4B' }}>
                     {form.logo_light ? <img src={form.logo_light} alt="Your logo for dark backgrounds" /> : <span style={{ color: 'rgba(255,255,255,.7)' }}>Light logo</span>}
                   </div>
                   <div>
@@ -208,7 +227,8 @@ export default function Settings() {
                       <button type="button" className="btn bg bsm" onClick={() => lightRef.current?.click()}><Icon name="plus" size={15} />{form.logo_light ? 'Replace light logo' : 'Upload light logo'}</button>
                       {form.logo_light && <button type="button" className="btn bq bsm" onClick={() => { setSaved(false); setForm((f) => ({ ...f, logo_light: '' })); }}>Remove</button>}
                     </div>
-                    <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>A white or light version for contract covers on your main colour. Optional.</div>
+                    <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>A white or light version for contract covers on your main colour, and for the sidebar of Vela and your client portal. Optional.</div>
+                    {lightOnLight && <div style={{ fontSize: 12.5, marginTop: 6, color: 'var(--warn)' }}>This logo doesn’t show up on your main colour, so it’s shown on a light background here. Upload a white or cream version.</div>}
                     <input ref={lightRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden onChange={(e) => { pickLogo(e.target.files?.[0], 'logo_light'); e.target.value = ''; }} />
                   </div>
                 </div>

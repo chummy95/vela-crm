@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import Shell from './Shell';
 import { useAuth } from '../hooks/useAuth';
+import { useStudioTheme } from '../hooks/useStudioTheme';
 
 const NAV = [
   { to: '/portal',           label: 'Overview',  icon: 'home' },
@@ -17,6 +18,7 @@ const NAV = [
 export default function PortalLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const brand = useStudioTheme(user?.id ? `${user.role || 'u'}-${user.id}` : '');
 
   async function handleLogout() {
     await logout();
@@ -32,6 +34,7 @@ export default function PortalLayout() {
       userName={user?.name || 'Client'}
       userSub={user?.client_name}
       onSignOut={handleLogout}
+      brand={brand}
     />
   );
 }

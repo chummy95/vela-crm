@@ -231,3 +231,87 @@ export function onColor(hex) {
   const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   return luminance > 0.45 ? '#1B1B1B' : '#FFFFFF';
 }
+
+// ── The app's own look, in the studio's brand ───────────────────
+// Turns a studio's colours and fonts into the variables the studio app and client portal use
+// (sidebar, buttons, headings, labels). Every colour is checked for contrast and nudged darker or
+// lighter until it reads well, so any brand colours give a usable app.
+
+function luminance(hex) {
+  const [r, g, b] = hexToRgb(hex).map((c) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+export function contrast(a, b) {
+  const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m);
+  return (x + 0.05) / (y + 0.05);
+}
+
+const toHex = (rgb) => `#${rgb.map((c) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+
+export function mix(hex, other, amount) {
+  const a = hexToRgb(hex);
+  const b = hexToRgb(other);
+  return toHex(a.map((c, i) => c + (b[i] - c) * amount));
+}
+
+// Move `hex` toward `toward` in small steps until it reaches the contrast needed against `bg`.
+function readable(hex, bg, ratio, toward) {
+  for (let t = 0; t <= 1.0001; t += 0.05) {
+    const candidate = mix(hex, toward, t);
+    if (contrast(candidate, bg) >= ratio) return candidate;
+  }
+  return toward;
+}
+
+const PAPER = '#F9F7F4';
+const CREAM = '#F5F0E8';
+
+export function hasStudioBrand(profile = {}) {
+  const primary = String(profile.brand_primary || '').toUpperCase();
+  const accent = String(profile.brand_accent || '').toUpperCase();
+  return Boolean((isHex(primary) && primary !== DEFAULT_BRAND.brand_primary)
+    || (isHex(accent) && accent !== DEFAULT_BRAND.brand_accent)
+    || cssFamily(profile, 'heading') || cssFamily(profile, 'body'));
+}
+
+export function appThemeVars(profile = {}) {
+  if (!hasStudioBrand(profile)) return {};
+  const primary = isHex(profile.brand_primary) ? profile.brand_primary.toUpperCase() : DEFAULT_BRAND.brand_primary;
+  const accent = isHex(profile.brand_accent) ? profile.brand_accent.toUpperCase() : DEFAULT_BRAND.brand_accent;
+
+  // Sidebar: the main colour, darkened if needed so the cream menu text stays readable.
+  const side = readable(primary, CREAM, 7, '#000000');
+  const text = readable(primary, PAPER, 9, '#000000');
+  const action = readable(primary, '#FFFFFF', 4.6, '#000000');
+  const label = readable(accent, PAPER, 3.2, text);
+  const sideAccent = contrast(accent, side) >= 3 ? accent : readable(accent, side, 3, '#FFFFFF');
+  const [r, g, b] = hexToRgb(action);
+
+  const vars = {
+    '--ink': side,
+    '--ink-2': mix(side, '#FFFFFF', 0.08),
+    '--text': text,
+    '--text-2': readable(mix(text, PAPER, 0.42), PAPER, 4.8, text),
+    '--text-3': readable(mix(text, PAPER, 0.58), PAPER, 3.1, text),
+    '--vela': action,
+    '--vela-2': mix(action, '#000000', 0.15),
+    '--brass': label,
+    '--brass-soft': toHex(tint(label, 0.9)),
+    '--info': action,
+    '--info-bg': toHex(tint(action, 0.91)),
+    '--navy-pale': toHex(tint(side, 0.93)),
+    '--focus': `0 0 0 3px rgba(${r}, ${g}, ${b}, .22)`,
+    '--shadow-pop': `0 18px 48px rgba(${hexToRgb(side).join(', ')}, .16)`,
+    '--side-accent': sideAccent,
+    '--side-accent-ink': onColor(sideAccent) === '#FFFFFF' ? '#FFFFFF' : side,
+  };
+  const heading = cssFamily(profile, 'heading');
+  const body = cssFamily(profile, 'body');
+  if (heading) vars['--font-heading'] = heading;
+  if (body) vars['--font-body'] = body;
+  return vars;
+}
