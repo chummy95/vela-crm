@@ -528,7 +528,7 @@ textarea.fi { resize: vertical; min-height: 72px; line-height: 1.6; }
 @media (max-width: 860px) {
   /* Phones and small tablets: the night sky becomes a header above the form. */
   .auth { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .auth-brand { min-height: 400px; min-height: min(60dvh, 470px); padding: 28px 24px 26px; gap: 24px; }
+  .auth-brand { min-height: 300px; min-height: min(44dvh, 360px); padding: 28px 24px 26px; gap: 24px; }
   .auth-brand-logo .brandlogo, .auth-brand-logo > span { width: 128px !important; }
   .auth-brand-line { font-size: 18px; max-width: 27ch; }
   .auth-main { align-items: flex-start; padding: 30px 22px 40px; }
