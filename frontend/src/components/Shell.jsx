@@ -6,7 +6,7 @@ import Icon from './Icon';
 // Shared frame for the studio app and the client portal: sidebar, mobile drawer, page outlet.
 // `brand` (optional) shows the studio's own logo or name instead of Vela's.
 function SidebarMark({ brand, logoVariant, width, compact = false }) {
-  if (brand?.logo) return <img className="sb-studio-logo" src={brand.logo} alt={brand.name || 'Studio'} style={{ maxWidth: width, maxHeight: compact ? 36 : 56 }} />;
+  if (brand?.logo) return <img className="sb-studio-logo" src={brand.logo} alt={brand.name || 'Studio'} style={{ maxWidth: width, maxHeight: compact ? 36 : 64 }} />;
   if (brand?.branded && brand.name) return <span className={`sb-studio-name${compact ? ' compact' : ''}`}>{brand.name}</span>;
   return <BrandLogo variant={logoVariant} width={compact ? 84 : width} alt="Vela" className="brand-logo" />;
 }
@@ -30,7 +30,7 @@ export default function Shell({ nav, home, logoVariant = 'white', logoWidth = 11
       <aside className="sidebar" aria-label="Main navigation">
         <div className="sb-logo">
           <button type="button" onClick={() => navigate(home)} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} aria-label="Go to overview">
-            <SidebarMark brand={brand} logoVariant={logoVariant} width={brand?.logo ? 150 : logoWidth} />
+            <SidebarMark brand={brand} logoVariant={logoVariant} width={brand?.logo ? 190 : logoWidth} />
           </button>
           <button type="button" className="sb-close" onClick={() => setOpen(false)} aria-label="Close menu">
             <Icon name="close" size={20} />
@@ -63,7 +63,7 @@ export default function Shell({ nav, home, logoVariant = 'white', logoWidth = 11
       <div className="scrim" onClick={() => setOpen(false)} aria-hidden="true" />
       <main className="main">
         <div className="mobile-bar">
-          <SidebarMark brand={brand} logoVariant={logoVariant} width={120} compact />
+          <SidebarMark brand={brand} logoVariant={logoVariant} width={160} compact />
           <button type="button" onClick={() => setOpen(true)} aria-label="Open menu">
             <Icon name="menu" size={22} />
           </button>
