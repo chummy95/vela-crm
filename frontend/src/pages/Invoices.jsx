@@ -38,6 +38,8 @@ export default function Invoices() {
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [emailing, setEmailing] = useState(false);
+  const [emailNote, setEmailNote] = useState('');
   const currency = profile.currency || user?.currency || 'GBP';
 
   useEffect(() => {
@@ -63,6 +65,7 @@ export default function Invoices() {
   useEffect(() => { setConfirmDelete(false); }, [routeInvoiceId]);
 
   const selected = useMemo(() => invoices.find((i) => i.id === routeInvoiceId) || null, [invoices, routeInvoiceId]);
+  useEffect(() => { setEmailNote(''); }, [routeInvoiceId]);
   const cur = (inv) => inv?.currency || currency;
 
   const totals = useMemo(() => {
@@ -128,6 +131,21 @@ export default function Invoices() {
       setPageError(err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function emailClient(invoice) {
+    setEmailing(true);
+    setPageError('');
+    setEmailNote('');
+    try {
+      const result = await invoicesAPI.emailToClient(invoice.id);
+      setInvoices((prev) => prev.map((i) => (i.id === invoice.id ? { ...i, emailed_at: result.emailed_at } : i)));
+      setEmailNote(`Emailed to ${result.emailed_to || invoice.client_name}.`);
+    } catch (err) {
+      setPageError(err.message);
+    } finally {
+      setEmailing(false);
     }
   }
 
@@ -212,6 +230,19 @@ export default function Invoices() {
             <div className="inv-split">
               <InvoiceDocument invoice={selected} profile={profile} />
               <aside className="panel" aria-label="How the client pays">
+                {!paid && (
+                  <div className="aside-block">
+                    <h2 className="card-title" style={{ marginBottom: 6 }}>Send to {selected.client_name || 'the client'}</h2>
+                    <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+                      {emailNote || (selected.emailed_at
+                        ? `Emailed on ${formatDate(selected.emailed_at, longDate)}.`
+                        : 'An email in your studio’s name with a link to view and pay.')}
+                    </p>
+                    <button className="btn bp bsm" type="button" disabled={emailing} onClick={() => emailClient(selected)}>
+                      <Icon name="mail" size={15} />{emailing ? 'Sending…' : selected.emailed_at || emailNote ? 'Email again' : 'Email to client'}
+                    </button>
+                  </div>
+                )}
                 <div className="aside-block">
                   <h2 className="card-title" style={{ marginBottom: 6 }}>How {selected.client_name || 'the client'} can pay</h2>
                   {howToPay.length

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import AuthLayout from '../components/AuthLayout';
 import { useAuth } from '../hooks/useAuth';
 import { authAPI, USER_ROLES } from '../utils/api';
+import { takeReturn } from '../utils/returnTo';
 
 export default function PortalLogin() {
   const [form, setForm] = useState({ email: '', password: '' });
@@ -20,7 +21,7 @@ export default function PortalLogin() {
 
     try {
       const result = await login(form, { expectedRole: USER_ROLES.CLIENT });
-      navigate(result.redirectTo || '/portal');
+      navigate(takeReturn('client') || result.redirectTo || '/portal');
     } catch (loginError) {
       setError(loginError.message);
     } finally {

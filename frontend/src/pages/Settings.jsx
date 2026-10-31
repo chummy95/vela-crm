@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
 import InvoiceDocument from '../components/InvoiceDocument';
-import { paymentsAPI, studioProfileAPI } from '../utils/api';
+import { notifyAPI, paymentsAPI, studioProfileAPI } from '../utils/api';
 import { CURRENCIES, DEFAULT_STUDIO_PROFILE, formatInvoiceNumber, resizeLogo } from '../utils/invoices';
 import { CUSTOM, DEFAULT_BRAND, FONT_GROUPS, FONT_OPTIONS, fontStack, isHex, loadBrandFonts, readFontFile } from '../utils/brand';
 
@@ -110,11 +110,31 @@ export default function Settings() {
   const [stripe, setStripe] = useState(null);
   const fileRef = useRef(null);
   const lightRef = useRef(null);
+  const [notif, setNotif] = useState(null);
+  const [notifError, setNotifError] = useState('');
+  const [testState, setTestState] = useState('');
 
   useEffect(() => {
     studioProfileAPI.get(undefined, { fresh: true }).then((p) => setForm({ ...DEFAULT_STUDIO_PROFILE, ...DEFAULT_BRAND, ...p })).catch((err) => setError(err.message)).finally(() => setLoaded(true));
     paymentsAPI.status().then((s) => setStripe(Boolean(s.stripe)));
+    notifyAPI.getSettings().then(setNotif).catch((err) => setNotifError(err.message));
   }, []);
+
+  const setN = (key) => (e) => { setSaved(false); setTestState(''); setNotif((n) => ({ ...n, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })); };
+
+  async function sendTest() {
+    setTestState('sending');
+    setNotifError('');
+    try {
+      const result = await notifyAPI.saveSettings(notif, { test: true });
+      setNotif(result);
+      setTestState(result.test?.sent ? 'sent' : '');
+      if (!result.test?.sent) setNotifError(result.test?.reason || 'The test email couldn’t be sent.');
+    } catch (err) {
+      setTestState('');
+      setNotifError(err.message);
+    }
+  }
 
   const set = (key) => (e) => { setSaved(false); setForm((f) => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })); };
 
@@ -137,6 +157,7 @@ export default function Settings() {
     try {
       const updated = await studioProfileAPI.save(form);
       setForm({ ...DEFAULT_STUDIO_PROFILE, ...DEFAULT_BRAND, ...updated });
+      if (notif) setNotif(await notifyAPI.saveSettings(notif));
       setSaved(true);
     } catch (err) {
       setError(err.message);
@@ -198,6 +219,46 @@ export default function Settings() {
                 <p className="faint" style={{ fontSize: 12.5, marginTop: -6, marginBottom: 16 }}>The main colour is used for titles and totals, the accent for small labels and details. Dark main colours read best.</p>
                 <FontField role="heading" label="Heading font" form={form} setForm={setBrand} setError={setError} />
                 <FontField role="body" label="Body font" form={form} setForm={setBrand} setError={setError} />
+              </section>
+
+              <section className="panel settings-sec" aria-labelledby="s-notify">
+                <h2 id="s-notify" className="card-title">Email notifications</h2>
+                <p className="muted settings-lede">Vela emails you when something happens, and emails your clients when you share something with them.</p>
+                {notifError && <div className="form-error" style={{ marginBottom: 12 }}>{notifError}</div>}
+                {!notif && !notifError && <p className="faint" style={{ marginBottom: 16 }}>Loading…</p>}
+                {notif && (
+                  <>
+                    <Field id="st-notify-email" label="Send my notifications to">
+                      <div className="notify-email-row">
+                        <input id="st-notify-email" className="fi" type="email" value={notif.email || ''} onChange={setN('email')} />
+                        <button type="button" className="btn bg" onClick={sendTest} disabled={testState === 'sending' || !notif.email}>
+                          {testState === 'sending' ? 'Sending…' : testState === 'sent' ? <><Icon name="check" size={15} />Test sent</> : 'Send a test email'}
+                        </button>
+                      </div>
+                    </Field>
+                    <label className="toggle-row">
+                      <input type="checkbox" checked={notif.studio_emails !== false} onChange={setN('studio_emails')} />
+                      <span>
+                        <span className="row-title" style={{ display: 'block' }}>When a client does something</span>
+                        <span className="row-sub" style={{ display: 'block' }}>Signs a contract, fills in a questionnaire, approves work or asks for changes, comments, messages you or pays an invoice.</span>
+                      </span>
+                    </label>
+                    <label className="toggle-row">
+                      <input type="checkbox" checked={notif.enquiry_emails !== false} onChange={setN('enquiry_emails')} />
+                      <span>
+                        <span className="row-title" style={{ display: 'block' }}>New enquiries</span>
+                        <span className="row-sub" style={{ display: 'block' }}>Every answer from your enquiry form, so you can reply straight from your inbox.</span>
+                      </span>
+                    </label>
+                    <label className="toggle-row">
+                      <input type="checkbox" checked={notif.client_emails !== false} onChange={setN('client_emails')} />
+                      <span>
+                        <span className="row-title" style={{ display: 'block' }}>Email my clients</span>
+                        <span className="row-sub" style={{ display: 'block' }}>When you share work, a questionnaire or a message, and when you press “Email to client” on a contract or invoice. Sent in your studio’s name and colours; replies come to you. Only clients with portal access get emails.</span>
+                      </span>
+                    </label>
+                  </>
+                )}
               </section>
 
               <section className="panel settings-sec" aria-labelledby="s-biz">

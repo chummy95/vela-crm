@@ -89,6 +89,8 @@ export default function Contracts() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [emailing, setEmailing] = useState(false);
+  const [emailNote, setEmailNote] = useState('');
 
   useEffect(() => {
     Promise.all([contractsAPI.list(), clientsAPI.list()])
@@ -105,6 +107,7 @@ export default function Contracts() {
   }, []);
 
   const selected = useMemo(() => contracts.find((c) => c.id === routeId) || null, [contracts, routeId]);
+  useEffect(() => { setEmailNote(''); }, [routeId]);
 
   useEffect(() => {
     if (!selected) return;
@@ -224,6 +227,21 @@ export default function Contracts() {
     }
   }
 
+  async function emailClient() {
+    setEmailing(true);
+    setDetailError('');
+    setEmailNote('');
+    try {
+      const result = await contractsAPI.emailToClient(selected.id);
+      setContracts((prev) => prev.map((c) => (c.id === selected.id ? { ...c, emailed_at: result.emailed_at } : c)));
+      setEmailNote(`Emailed to ${result.emailed_to || selected.client_name}.`);
+    } catch (err) {
+      setDetailError(err.message);
+    } finally {
+      setEmailing(false);
+    }
+  }
+
   const previewContract = () => ({ ...selected, ...form, studio_signature: selected.studio_signature });
 
   async function handleDelete() {
@@ -293,6 +311,20 @@ export default function Contracts() {
                     : 'Link a client so they can sign this in their portal.'}
                 </span>
                 {selected.studio_signature && <button type="button" className="auth-link" style={{ fontSize: 13 }} disabled={saving} onClick={removeStudioSignature}>Remove my signature</button>}
+              </div>
+            )}
+            {!signed && selected.client_id && (
+              <div className="email-bar">
+                <Icon name="mail" size={16} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  {emailNote || (selected.emailed_at
+                    ? `Emailed to ${selected.client_name} on ${new Date(selected.emailed_at).toLocaleString('en-GB', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}.`
+                    : `Send ${selected.client_name} an email with a link to review and sign.`)}
+                  {dirty && <span className="faint"> Save your changes first.</span>}
+                </span>
+                <button className="btn bg bsm" type="button" disabled={emailing || saving || dirty} onClick={emailClient}>
+                  {emailing ? 'Sending…' : selected.emailed_at || emailNote ? 'Email again' : 'Email to client'}
+                </button>
               </div>
             )}
             <div className="editor-split">

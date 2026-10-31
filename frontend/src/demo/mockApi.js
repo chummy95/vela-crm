@@ -243,8 +243,18 @@ function withTotals(row) {
   return Object.assign(row, { subtotal: String(t.subtotal), vat_amount: String(t.vat), amount: String(t.total) });
 }
 
+
+// Demo: pretend to email the client when they have portal access.
+function demoEmail(collection, rid) {
+  const row = byId(collection, rid);
+  const client = byId('clients', row?.client_id);
+  if (!client?.portal_user_id) return Promise.reject(new Error('This client doesn’t have portal access yet. Give them access on their client page first.'));
+  row.emailed_at = new Date().toISOString();
+  return delay({ ...row, emailed_to: client.portal_email });
+}
 export const invoicesAPI = {
   ...crud('invoices'),
+  async emailToClient(rid) { return demoEmail('invoices', rid); },
   async create(body) {
     const client = byId('clients', body.client_id);
     const row = withTotals({
@@ -273,6 +283,16 @@ export const invoicesAPI = {
   },
 };
 
+let notifySettings = { email: 'mayaa@creativemayaa.studio', studio_emails: true, enquiry_emails: true, client_emails: true, ready: true };
+export const notifyAPI = {
+  async getSettings() { return delay({ ...notifySettings }); },
+  async saveSettings(body, { test = false } = {}) {
+    if (body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) throw new Error('Enter a valid email address.');
+    notifySettings = { ...notifySettings, ...body };
+    return delay({ ...notifySettings, test: test ? { sent: true } : undefined });
+  },
+};
+
 export const paymentsAPI = {
   async status() { return { stripe: true }; },
   async checkout(rid) { return `/portal/invoices/${rid}?paid=1`; },
@@ -289,6 +309,7 @@ const contractListeners = new Set();
 const emitContracts = () => contractListeners.forEach((fn) => fn(JSON.parse(JSON.stringify(db.contracts))));
 export const contractsAPI = {
   ...crud('contracts'),
+  async emailToClient(rid) { return demoEmail('contracts', rid); },
   async sign(rid) {
     const row = byId('contracts', rid);
     row.signed = true;

@@ -874,6 +874,18 @@ export const invoicesAPI = {
     return getAccessibleDoc('invoices', id, session);
   },
 
+  // Emails the client a link to view and pay the invoice (they need portal access).
+  async emailToClient(id) {
+    const session = await requireStudioSession();
+    const current = await getAccessibleDoc('invoices', id, session);
+    if (current.status === 'paid') throw new Error('This invoice is already paid.');
+    const stamp = now();
+    await updateDoc(doc(db, 'invoices', id), { emailed_at: stamp });
+    const result = await notify('invoice_sent', id);
+    if (!result?.sent) throw new Error(result?.reason || result?.error || 'The email couldn’t be sent.');
+    return { ...current, emailed_at: stamp, emailed_to: result.to || '' };
+  },
+
   async updateStatus(id, status, extra = {}) {
     const session = await requireStudioSession();
     await getAccessibleDoc('invoices', id, session);
@@ -1081,6 +1093,18 @@ export const contractsAPI = {
   },
 
   // Studio records a contract signed on paper or elsewhere.
+  // Emails the client a link to review and sign (they need portal access).
+  async emailToClient(id) {
+    const session = await requireStudioSession();
+    const current = await getAccessibleDoc('contracts', id, session);
+    if (current.signed) throw new Error('This contract is already signed.');
+    const stamp = now();
+    await updateDoc(doc(db, 'contracts', id), { emailed_at: stamp });
+    const result = await notify('contract_sent', id);
+    if (!result?.sent) throw new Error(result?.reason || result?.error || 'The email couldn’t be sent.');
+    return { ...current, emailed_at: stamp, emailed_to: result.to || '' };
+  },
+
   async sign(id) {
     const session = await requireStudioSession();
     await getAccessibleDoc('contracts', id, session);
@@ -1126,7 +1150,7 @@ export const contractsAPI = {
     };
     const payload = { signed: true, signed_at: stamp, signed_hash: text(fingerprint).slice(0, 64), client_signature, updated_at: stamp };
     await updateDoc(doc(db, 'contracts', id), payload);
-    notifyStudioOfSubmission(id, 'contract');
+    notify('contract_signed', id);
     return { ...current, ...payload };
   },
 
@@ -1312,6 +1336,22 @@ export const formsAPI = {
     if (!Object.keys(sanitizedData).length) {
       throw new Error('Please complete the form before submitting.');
     }
+    // Sent through Vela's server so the studio gets an email; saved directly if that isn't reachable.
+    let res = null;
+    try {
+      res = await fetch('/api/enquiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: targetUserId, data: sanitizedData }),
+      });
+    } catch {
+      res = null;
+    }
+    if (res) {
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.id) return { id: json.id, user_id: targetUserId, data: sanitizedData, submitted_at: json.submitted_at };
+      if (res.status === 400 && json?.error) throw new Error(json.error);
+    }
     const payload = {
       user_id: targetUserId,
       data: sanitizedData,
@@ -1411,6 +1451,7 @@ export const messagesAPI = {
     };
 
     const reference = await addDoc(collection(db, 'messages'), payload);
+    notify(isStudioProfile(session.profile) ? 'studio_message' : 'client_message', reference.id);
     return { id: reference.id, ...payload };
   },
 };
@@ -1438,21 +1479,48 @@ function sanitizeAnswers(answers, questions) {
   );
 }
 
-// Lets the studio know by email when a client submits (best effort; Vela still shows it in-app).
-async function notifyStudioOfSubmission(responseId, kind = 'questionnaire') {
+// Email updates (best effort; everything is already saved and shows in Vela either way).
+// The server checks the record and decides who to email, so the browser only names the event.
+async function notify(event, id) {
   try {
     const token = await auth?.currentUser?.getIdToken();
-    if (!token) return;
-    await fetch('/api/notify-submission', {
+    if (!token || !id) return { sent: false };
+    const res = await fetch('/api/notify', {
       method: 'POST',
       keepalive: true,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(kind === 'review' ? { reviewId: responseId } : kind === 'contract' ? { contractId: responseId } : { responseId }),
+      body: JSON.stringify({ event, id }),
     });
+    return await res.json().catch(() => ({ sent: false }));
   } catch {
-    // Email is a convenience; the submission itself has already been saved.
+    return { sent: false };
   }
 }
+
+async function notifySettingsRequest(method, body) {
+  const token = await auth?.currentUser?.getIdToken();
+  if (!token) throw new Error('Sign in again.');
+  const res = await fetch('/api/notify-settings', {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || 'Email settings aren’t available right now.');
+  return json;
+}
+
+export const notifyAPI = {
+  // Where the studio's emails go and which ones it wants. Created from the sign-in email on first use.
+  async getSettings() {
+    await requireStudioSession();
+    return notifySettingsRequest('GET');
+  },
+  async saveSettings(body, { test = false } = {}) {
+    await requireStudioSession();
+    return notifySettingsRequest('POST', { ...body, test });
+  },
+};
 
 export const questionnairesAPI = {
   async listTemplates() {
@@ -1545,7 +1613,8 @@ export const questionnairesAPI = {
       submitted_at: '',
     };
     const reference = await addDoc(collection(db, 'questionnaire_responses'), payload);
-    return { id: reference.id, ...payload };
+    const emailed = await notify('questionnaire_sent', reference.id);
+    return { id: reference.id, ...payload, emailed };
   },
 
   async saveAnswers(id, answers) {
@@ -1568,7 +1637,7 @@ export const questionnairesAPI = {
     const stamp = now();
     const payload = { answers: sanitizeAnswers(answers, current.questions), status: 'submitted', submitted_at: stamp, updated_at: stamp };
     await updateDoc(doc(db, 'questionnaire_responses', id), payload);
-    notifyStudioOfSubmission(id);
+    notify('questionnaire_submitted', id);
     return { ...current, ...payload };
   },
 
@@ -1675,7 +1744,8 @@ export const reviewsAPI = {
       studio_seen_at: stamp,
     };
     const reference = await addDoc(collection(db, 'reviews'), payload);
-    return { id: reference.id, ...payload };
+    const emailed = await notify('review_shared', reference.id);
+    return { id: reference.id, ...payload, emailed };
   },
 
   // Client approves or asks for changes.
@@ -1698,7 +1768,7 @@ export const reviewsAPI = {
         created_at: stamp,
       });
     }
-    notifyStudioOfSubmission(id, 'review');
+    notify('review_activity', id);
     return { ...current, ...payload };
   },
 
@@ -1749,7 +1819,7 @@ export const reviewsAPI = {
       await updateDoc(doc(db, 'reviews', id), { studio_seen_at: stamp, updated_at: stamp });
     } else {
       await updateDoc(doc(db, 'reviews', id), { client_activity_at: stamp, updated_at: stamp });
-      notifyStudioOfSubmission(id, 'review');
+      notify('review_activity', id);
     }
     return { id: reference.id, ...comment };
   },

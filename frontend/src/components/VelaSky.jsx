@@ -62,8 +62,12 @@ export default function VelaSky() {
         ctx.fill();
       }
       // The constellation, east on the left as it appears in the sky.
-      const bw = Math.min(w * 0.72, 440), bh = bw * 0.62;
-      const ox = (w - bw) / 2 - mouse.x * 26, oy = h * 0.5 - bh / 2 - 10 - mouse.y * 18;
+      // On a phone the panel is a short header, so the shape sits a little higher and smaller,
+      // clear of the tagline at the bottom.
+      const compact = w < 640;
+      const bw = Math.min(w * (compact ? 0.6 : 0.72), 440), bh = bw * 0.62;
+      const wide = w > h * 1.3; // a wide, short header (tablets): keep the shape to the right of the text
+      const ox = (wide ? w * 0.64 - bw / 2 : (w - bw) / 2) - mouse.x * 26, oy = h * (compact ? 0.4 : 0.5) - bh / 2 - 10 - mouse.y * 18;
       const pts = STARS.map((s) => ({
         x: ox + (1 - (s.ra - minRa) / (maxRa - minRa)) * bw,
         y: oy + (1 - (s.dec - minDec) / (maxDec - minDec)) * bh,

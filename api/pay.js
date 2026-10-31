@@ -136,7 +136,33 @@ async function status(req, res, token) {
     const result = await stripe(`payment_intents/search?limit=100&query=${encodeURIComponent(query)}`);
     (result.data || []).forEach((pi) => record(pi.metadata?.vela_invoice, pi));
   }
+  await emailStudioAboutPayments(req, token, paid).catch((error) => console.error('paid email failed', error?.message));
   return res.status(200).json({ paid });
+}
+
+// One email per paid invoice, to the studio that sent it.
+async function emailStudioAboutPayments(req, token, paid) {
+  const ids = Object.keys(paid);
+  if (!ids.length) return;
+  const { readDoc, firstTime, renderEmail, sendEmail, siteUrl, studioSettings } = require('./_notify');
+  for (const id of ids) {
+    const inv = await readDoc(`invoices/${id}`, token);
+    if (!inv?.user_id) continue;
+    const settings = await studioSettings(req, inv.user_id);
+    if (!settings?.email || settings.studio_emails === false) continue;
+    if (!(await firstTime(req, `paid_${id}`))) continue;
+    let total = `${inv.currency || ''} ${inv.amount || ''}`.trim();
+    try { total = new Intl.NumberFormat('en-GB', { style: 'currency', currency: inv.currency || 'GBP' }).format(Number(inv.amount) || 0); } catch { /* keep plain */ }
+    const who = inv.client_name || 'A client';
+    const { html, text } = renderEmail({
+      eyebrow: 'Payment received',
+      headline: `${who} paid ${total}`,
+      lines: [`Invoice ${inv.number || ''} was paid by card through Stripe.`.replace(/\s+/g, ' ')],
+      button: { label: 'Open the invoice', href: `${siteUrl(req)}/invoices/${id}` },
+      footer: 'You’re getting this because a client paid an invoice in your Vela portal. Turn these emails off in Settings.',
+    });
+    await sendEmail({ to: settings.email, subject: `${who} paid invoice ${inv.number || ''}`.trim(), html, text });
+  }
 }
 
 module.exports = async function handler(req, res) {

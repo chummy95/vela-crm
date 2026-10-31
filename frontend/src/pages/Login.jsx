@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import AuthLayout from '../components/AuthLayout';
 import { useAuth } from '../hooks/useAuth';
 import { authAPI, USER_ROLES } from '../utils/api';
+import { takeReturn } from '../utils/returnTo';
 
 export default function Login() {
   const [mode, setMode] = useState('login');
@@ -19,7 +20,7 @@ export default function Login() {
     try {
       if (mode === 'login') {
         const result = await login({ email: form.email, password: form.password }, { expectedRole: USER_ROLES.STUDIO });
-        navigate(result.redirectTo || '/');
+        navigate(takeReturn('studio') || result.redirectTo || '/');
       } else {
         const result = await register(form);
         navigate(result.redirectTo || '/');
