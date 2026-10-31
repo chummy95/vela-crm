@@ -4,7 +4,14 @@ import BrandLogo from './BrandLogo';
 import Icon from './Icon';
 
 // Shared frame for the studio app and the client portal: sidebar, mobile drawer, page outlet.
-export default function Shell({ nav, home, logoVariant = 'white', logoWidth = 112, userName, userSub, onSignOut }) {
+// `brand` (optional) shows the studio's own logo or name instead of Vela's.
+function SidebarMark({ brand, logoVariant, width, compact = false }) {
+  if (brand?.logo) return <img className="sb-studio-logo" src={brand.logo} alt={brand.name || 'Studio'} style={{ maxWidth: width, maxHeight: compact ? 36 : 56 }} />;
+  if (brand?.branded && brand.name) return <span className={`sb-studio-name${compact ? ' compact' : ''}`}>{brand.name}</span>;
+  return <BrandLogo variant={logoVariant} width={compact ? 84 : width} alt="Vela" className="brand-logo" />;
+}
+
+export default function Shell({ nav, home, logoVariant = 'white', logoWidth = 112, userName, userSub, onSignOut, brand }) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -23,7 +30,7 @@ export default function Shell({ nav, home, logoVariant = 'white', logoWidth = 11
       <aside className="sidebar" aria-label="Main navigation">
         <div className="sb-logo">
           <button type="button" onClick={() => navigate(home)} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} aria-label="Go to overview">
-            <BrandLogo variant={logoVariant} width={logoWidth} alt="Vela" className="brand-logo" />
+            <SidebarMark brand={brand} logoVariant={logoVariant} width={brand?.logo ? 150 : logoWidth} />
           </button>
           <button type="button" className="sb-close" onClick={() => setOpen(false)} aria-label="Close menu">
             <Icon name="close" size={20} />
@@ -41,6 +48,7 @@ export default function Shell({ nav, home, logoVariant = 'white', logoWidth = 11
             </React.Fragment>
           ))}
         </nav>
+        {brand?.branded && <div className="sb-powered">Powered by Vela</div>}
         <div className="sb-user">
           <div className="ua" aria-hidden="true">{(userName || 'V')[0]}</div>
           <div style={{ minWidth: 0 }}>
@@ -55,7 +63,7 @@ export default function Shell({ nav, home, logoVariant = 'white', logoWidth = 11
       <div className="scrim" onClick={() => setOpen(false)} aria-hidden="true" />
       <main className="main">
         <div className="mobile-bar">
-          <BrandLogo variant={logoVariant} width={84} alt="Vela" className="brand-logo" />
+          <SidebarMark brand={brand} logoVariant={logoVariant} width={120} compact />
           <button type="button" onClick={() => setOpen(true)} aria-label="Open menu">
             <Icon name="menu" size={22} />
           </button>

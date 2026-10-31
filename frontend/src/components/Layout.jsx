@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Shell from './Shell';
 import { useAuth } from '../hooks/useAuth';
+import { useStudioTheme } from '../hooks/useStudioTheme';
 import { notifyAPI } from '../utils/api';
 import { QuestionnaireAlertsProvider, useQuestionnaireAlerts } from '../hooks/useQuestionnaireAlerts';
 
@@ -37,6 +38,7 @@ function StudioShell() {
     return item;
   });
   const navigate = useNavigate();
+  const brand = useStudioTheme(user?.id ? `${user.role || 'u'}-${user.id}` : '');
 
   // Make sure Vela knows where to email this studio (set up from the sign-in email the first time).
   useEffect(() => {
@@ -58,6 +60,7 @@ function StudioShell() {
       userName={user?.name || 'Studio'}
       userSub={user?.studio_name}
       onSignOut={handleLogout}
+      brand={brand}
     />
   );
 }

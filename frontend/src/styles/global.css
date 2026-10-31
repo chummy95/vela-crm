@@ -131,6 +131,10 @@ button { font: inherit; color: inherit; }
   cursor: pointer;
 }
 .brand-logo { display: block; max-width: 100%; height: auto; }
+.sb-studio-logo { display: block; width: auto; height: auto; object-fit: contain; }
+.sb-studio-name { display: block; font-family: var(--font-heading); font-size: 21px; line-height: 1.15; color: #F5F0E8; text-align: left; max-width: 180px; }
+.sb-studio-name.compact { font-size: 17px; max-width: 200px; }
+.sb-powered { margin: 0 22px 10px; font-size: 11px; letter-spacing: .02em; color: rgba(245, 240, 232, .32); }
 .sb-nav { flex: 1; padding: 4px 12px 12px; overflow-y: auto; }
 .sb-sec {
   padding: 18px 10px 6px; font-size: 11.5px; font-weight: 500;
@@ -146,7 +150,7 @@ button { font: inherit; color: inherit; }
 .ni.active { background: rgba(245, 240, 232, .09); color: #FFFFFF; }
 .ni.active::before {
   content: ''; position: absolute; left: -12px; top: 8px; bottom: 8px; width: 3px;
-  border-radius: 0 3px 3px 0; background: #C9A84C;
+  border-radius: 0 3px 3px 0; background: var(--side-accent, #C9A84C);
 }
 .ni .ico { width: 18px; height: 18px; flex-shrink: 0; opacity: .9; }
 .ni.active .ico { opacity: 1; }
@@ -155,7 +159,7 @@ button { font: inherit; color: inherit; }
   display: flex; align-items: center; gap: 10px;
 }
 .ua {
-  width: 32px; height: 32px; border-radius: 50%; background: #C9A84C; color: var(--ink);
+  width: 32px; height: 32px; border-radius: 50%; background: var(--side-accent, #C9A84C); color: var(--side-accent-ink, var(--ink));
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-heading); font-size: 15px; font-weight: 600; flex-shrink: 0;
 }
@@ -445,7 +449,7 @@ textarea.fi { resize: vertical; min-height: 72px; line-height: 1.6; }
 .col-label { position: absolute; bottom: -22px; font-size: 12px; color: var(--text-2); }
 
 /* ── Badges, toasts ────────────────────────────────────────── */
-.ni-badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #C9A84C; color: var(--ink); font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+.ni-badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--side-accent, #C9A84C); color: var(--side-accent-ink, var(--ink)); font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
 .toasts { position: fixed; right: 20px; bottom: 20px; z-index: 1100; display: flex; flex-direction: column; gap: 10px; width: min(380px, calc(100vw - 32px)); }
 .toast { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--brass); border-radius: var(--r-md); padding: 14px 12px 14px 14px; box-shadow: var(--shadow-pop); animation: pop .2s ease-out; }
 .toast-ico { width: 32px; height: 32px; border-radius: 50%; background: var(--brass-soft); color: var(--brass); display: inline-flex; align-items: center; justify-content: center; }
