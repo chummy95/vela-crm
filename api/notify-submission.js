@@ -53,7 +53,7 @@ module.exports = async function handler(req, res) {
   const contact = field(doc, 'contact_name') || client;
   const title = field(doc, 'title') || (isContract ? `${field(doc, 'service') || 'Project'} contract` : isReview ? 'their work' : 'questionnaire');
   const project = field(doc, 'project_service');
-  const host = req.headers['x-forwarded-host'] || req.headers.host || 'vela-crm.vercel.app';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'vela-studio.net';
 
   let when;
   let headline;

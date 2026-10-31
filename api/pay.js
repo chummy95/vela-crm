@@ -53,7 +53,7 @@ async function stripe(path, { method = 'GET', form } = {}) {
 
 function siteOrigin(req) {
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || '');
-  return /^[a-z0-9.-]+(:\d+)?$/i.test(host) ? `https://${host}` : 'https://vela-crm.vercel.app';
+  return /^[a-z0-9.-]+(:\d+)?$/i.test(host) ? `https://${host}` : 'https://vela-studio.net';
 }
 
 async function checkout(req, res, token) {
