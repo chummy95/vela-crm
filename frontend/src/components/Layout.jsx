@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Shell from './Shell';
 import { useAuth } from '../hooks/useAuth';
+import { notifyAPI } from '../utils/api';
 import { QuestionnaireAlertsProvider, useQuestionnaireAlerts } from '../hooks/useQuestionnaireAlerts';
 
 const NAV = [
@@ -36,6 +37,14 @@ function StudioShell() {
     return item;
   });
   const navigate = useNavigate();
+
+  // Make sure Vela knows where to email this studio (set up from the sign-in email the first time).
+  useEffect(() => {
+    if (!user?.id) return;
+    const key = `vela-notify-ready-${user.id}`;
+    try { if (sessionStorage.getItem(key)) return; } catch { /* private mode */ }
+    notifyAPI.getSettings().then(() => { try { sessionStorage.setItem(key, '1'); } catch { /* private mode */ } }).catch(() => {});
+  }, [user?.id]);
 
   async function handleLogout() {
     await logout();

@@ -10,9 +10,9 @@ export default function AuthLayout({ eyebrow, title, intro, children, footer }) 
         <VelaSky />
         <div className="auth-brand-logo"><BrandLogo variant="whiteTagline" width={176} alt="Vela" /></div>
         <p className="auth-brand-line">
-          <span>The calm place to run a creative studio:</span>{' '}
-          <span>clients, projects and paperwork,</span>{' '}
-          <span>together.</span>
+          <span>The all-in-one home for your creative studio:</span>{' '}
+          <span>clients, projects, contracts and payments,</span>{' '}
+          <span>beautifully in one place.</span>
         </p>
       </aside>
       <main className="auth-main">

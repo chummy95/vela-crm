@@ -1,5 +1,6 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { rememberReturn, takeReturn } from './utils/returnTo';
 import { AuthProvider, isClientUser, useAuth } from './hooks/useAuth';
 import Layout from './components/Layout';
 import PortalLayout from './components/PortalLayout';
@@ -36,12 +37,14 @@ function homeForRole(user) {
 
 function Protected({ children, allowedRole = '' }) {
   const { token, ready, user } = useAuth();
+  const location = useLocation();
 
   if (!ready) {
     return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--card)', color: 'var(--text-s)' }}>Loading…</div>;
   }
 
   if (!token) {
+    rememberReturn(location.pathname + location.search);
     return <Navigate to={allowedRole === 'client' ? '/portal/login' : '/login'} replace />;
   }
 
@@ -59,7 +62,7 @@ function PublicOnly({ children }) {
     return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--card)', color: 'var(--text-s)' }}>Loading…</div>;
   }
 
-  return token ? <Navigate to={homeForRole(user)} replace /> : children;
+  return token ? <Navigate to={takeReturn(user?.role) || homeForRole(user)} replace /> : children;
 }
 
 export default function App() {
