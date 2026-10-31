@@ -215,6 +215,7 @@ export default function Settings() {
                       {form.logo && <button type="button" className="btn bq bsm" onClick={() => { setSaved(false); setForm((f) => ({ ...f, logo: '' })); }}>Remove</button>}
                     </div>
                     <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>PNG with a transparent background works best.</div>
+                    {logoOnDark && <div style={{ fontSize: 12.5, marginTop: 6, color: 'var(--warn)' }}>This logo is light, so it won’t show on white invoices, proposals and contracts. Upload your dark version here, and put this one under light logo.</div>}
                     <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden onChange={(e) => { pickLogo(e.target.files?.[0]); e.target.value = ''; }} />
                   </div>
                 </div>
