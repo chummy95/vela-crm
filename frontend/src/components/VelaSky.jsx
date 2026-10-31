@@ -38,6 +38,7 @@ export default function VelaSky() {
     const decs = STARS.map((s) => s.dec);
     const minRa = Math.min(...ras), maxRa = Math.max(...ras), minDec = Math.min(...decs), maxDec = Math.max(...decs);
     const mouse = { x: 0, y: 0, tx: 0, ty: 0 };
+    const header = window.matchMedia('(max-width: 860px)');
     let w = 0, h = 0, raf = 0;
     const start = performance.now();
 
@@ -61,13 +62,11 @@ export default function VelaSky() {
         ctx.arc(s.x * w - mouse.x * 14 * (0.4 + s.r), s.y * h - mouse.y * 10 * (0.4 + s.r), s.r, 0, 6.283);
         ctx.fill();
       }
-      // The constellation, east on the left as it appears in the sky.
-      // On a phone the panel is a short header, so the shape sits a little higher and smaller,
-      // clear of the tagline at the bottom.
-      const compact = w < 640;
-      const bw = Math.min(w * (compact ? 0.6 : 0.72), 440), bh = bw * 0.62;
-      const wide = w > h * 1.3; // a wide, short header (tablets): keep the shape to the right of the text
-      const ox = (wide ? w * 0.64 - bw / 2 : (w - bw) / 2) - mouse.x * 26, oy = h * (compact ? 0.4 : 0.5) - bh / 2 - 10 - mouse.y * 18;
+      // The constellation, east on the left as it appears in the sky. On phones and tablets, where the
+      // sky is a header above the form, only the starfield shows.
+      if (header.matches) { ctx.globalAlpha = 1; return; }
+      const bw = Math.min(w * 0.72, 440), bh = bw * 0.62;
+      const ox = (w - bw) / 2 - mouse.x * 26, oy = h * 0.5 - bh / 2 - 10 - mouse.y * 18;
       const pts = STARS.map((s) => ({
         x: ox + (1 - (s.ra - minRa) / (maxRa - minRa)) * bw,
         y: oy + (1 - (s.dec - minDec) / (maxDec - minDec)) * bh,
