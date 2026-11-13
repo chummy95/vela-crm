@@ -132,7 +132,9 @@ function safeColor(value, fallback) {
 }
 
 // One layout for every email. `brand` is the studio's look for emails to clients, Vela's otherwise.
-function renderEmail({ brand = {}, eyebrow, headline, lines = [], rows = [], button, footer }) {
+// Optional extras: `preheader` (inbox preview line), `steps` [[title, text]], `after` (paragraphs
+// below the button) and `signoff` (lines, e.g. a signature).
+function renderEmail({ brand = {}, eyebrow, headline, lines = [], rows = [], button, footer, preheader, steps = [], after = [], signoff = [] }) {
   const primary = safeColor(brand.primary, '#1B2B4B');
   const accent = safeColor(brand.accent, '#A9822F');
   const name = brand.name || 'Vela';
@@ -142,10 +144,20 @@ function renderEmail({ brand = {}, eyebrow, headline, lines = [], rows = [], but
         <tr><td style="padding:10px 0;border-top:1px solid #ECE7DE;font-size:12.5px;color:#7A8296;vertical-align:top">${escapeHtml(k)}</td></tr>
         <tr><td style="padding:0 0 10px;font-size:14.5px;color:#1F2633;white-space:pre-wrap;line-height:1.5">${escapeHtml(v)}</td></tr>`).join('')}</table>`
     : '';
+  const stepList = steps.length
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:2px 0 18px">${steps.map(([title, detail], i) => `
+        <tr><td style="width:34px;vertical-align:top;padding:12px 0 0"><span style="display:inline-block;width:24px;height:24px;line-height:24px;border-radius:50%;background:${primary};color:#ffffff;text-align:center;font-size:12.5px;font-weight:600">${i + 1}</span></td>
+        <td style="padding:12px 0 0;vertical-align:top"><p style="margin:0 0 3px;font-size:15px;font-weight:600;color:#1F2633">${escapeHtml(title)}</p><p style="margin:0;color:#4A5468;font-size:14.5px;line-height:1.55">${escapeHtml(detail)}</p></td></tr>`).join('')}</table>`
+    : '';
+  const afterText = after.filter(Boolean).map((l) => `<p style="margin:0 0 14px;color:#4A5468;font-size:15px;line-height:1.6">${escapeHtml(l)}</p>`).join('');
+  const sign = signoff.length
+    ? `<p style="margin:4px 0 22px;color:#1F2633;font-size:15px;line-height:1.6">${signoff.map((l, i) => (i === 1 ? `<span style="font-family:Georgia,'Times New Roman',serif;font-size:18px">${escapeHtml(l)}</span>` : escapeHtml(l))).join('<br>')}</p>`
+    : '';
+  const hidden = preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${escapeHtml(preheader)}</div>` : '';
   const cta = button
     ? `<p style="margin:6px 0 26px"><a href="${escapeHtml(button.href)}" style="background:${primary};color:#ffffff;padding:12px 20px;border-radius:6px;text-decoration:none;display:inline-block;font-size:14.5px;font-weight:600">${escapeHtml(button.label)}</a></p>`
     : '';
-  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#F6F3EE">
+  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#F6F3EE">${hidden}
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F6F3EE;padding:28px 12px"><tr><td align="center">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #ECE7DE">
       <tr><td style="background:${primary};height:6px;line-height:6px;font-size:0">&nbsp;</td></tr>
@@ -153,20 +165,28 @@ function renderEmail({ brand = {}, eyebrow, headline, lines = [], rows = [], but
         <p style="margin:0 0 18px;font-family:Georgia,'Times New Roman',serif;font-size:17px;color:${primary}">${escapeHtml(name)}</p>
         ${eyebrow ? `<p style="margin:0 0 6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:${accent}">${escapeHtml(eyebrow)}</p>` : ''}
         <h1 style="margin:0 0 14px;font-family:Georgia,'Times New Roman',serif;font-weight:600;font-size:24px;line-height:1.25;color:#1F2633">${escapeHtml(headline)}</h1>
-        ${body}${table}${cta}
+        ${body}${stepList}${table}${cta}${afterText}${sign}
       </td></tr>
       <tr><td style="padding:16px 30px 24px;border-top:1px solid #F0ECE5;font-family:Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#8A92A3">${escapeHtml(footer || 'Sent by Vela.')}</td></tr>
     </table>
   </td></tr></table></body></html>`;
-  const text = [headline, ...lines, ...rows.map(([k, v]) => `${k}: ${v}`), button ? `${button.label}: ${button.href}` : '', footer || ''].filter(Boolean).join('\n\n');
+  const text = [
+    headline, ...lines,
+    ...steps.map(([t, d], i) => `${i + 1}. ${t}\n${d}`),
+    ...rows.map(([k, v]) => `${k}: ${v}`),
+    button ? `${button.label}: ${button.href}` : '',
+    ...after, signoff.join('\n'), footer || '',
+  ].filter(Boolean).join('\n\n');
   return { html, text };
 }
 
-async function sendEmail({ to, subject, html, text, replyTo, fromName }) {
+// `fromName` sends as "<name> via Vela"; `fromLabel` uses the name exactly ("Mayaa from Vela").
+async function sendEmail({ to, subject, html, text, replyTo, fromName, fromLabel }) {
   if (!emailConfigured()) return { sent: false, reason: 'Email isn’t set up.' };
   if (!isEmail(to)) return { sent: false, reason: 'No email address to send to.' };
   const address = FROM.match(/<([^>]+)>/)?.[1] || FROM;
-  const from = fromName ? `${String(fromName).replace(/[<>"\r\n]/g, '').slice(0, 60)} via Vela <${address}>` : FROM;
+  const clean = (v) => String(v).replace(/[<>"\r\n]/g, '').slice(0, 60);
+  const from = fromLabel ? `${clean(fromLabel)} <${address}>` : fromName ? `${clean(fromName)} via Vela <${address}>` : FROM;
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
@@ -180,7 +200,54 @@ async function sendEmail({ to, subject, html, text, replyTo, fromName }) {
   return { sent: true };
 }
 
+// ── Vela's owner (Mayaa) ────────────────────────────────────────
+// The owner can see every studio on the Owner page and is emailed when a studio signs up.
+const OWNER_EMAILS = String(process.env.OWNER_EMAILS || 'creativemayaa@gmail.com')
+  .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+const OWNER_REPLY_TO = process.env.OWNER_REPLY_TO || OWNER_EMAILS[0];
+
+function isOwner(caller) {
+  return Boolean(caller?.email) && OWNER_EMAILS.includes(String(caller.email).toLowerCase());
+}
+
+// One small record per studio in the private store: who they are and when they were last around.
+async function recordStudio(req, caller, extra = {}) {
+  if (!caller?.uid || caller.profile?.role !== 'studio') return null;
+  const path = `owner/studios/${caller.uid}.json`;
+  const current = (await readJson(req, path)) || {};
+  const next = {
+    ...current,
+    uid: caller.uid,
+    name: String(caller.profile?.name || current.name || '').slice(0, 120),
+    studio: String(caller.profile?.studio_name || current.studio || '').slice(0, 120),
+    email: String(caller.email || current.email || '').slice(0, 200),
+    created_at: caller.profile?.created_at || current.created_at || new Date().toISOString(),
+    ...extra,
+  };
+  await writeJson(req, path, next);
+  return next;
+}
+
+async function listStudios(req) {
+  if (!storeConfigured()) return [];
+  const { list } = await import('@vercel/blob');
+  const paths = [];
+  let cursor;
+  do {
+    const page = await list({ prefix: 'owner/studios/', cursor, limit: 1000, ...blobAuth(req) });
+    page.blobs.forEach((b) => paths.push(b.pathname));
+    cursor = page.hasMore ? page.cursor : undefined;
+  } while (cursor);
+  const rows = await Promise.all(paths.map((p) => readJson(req, p)));
+  return rows.filter(Boolean);
+}
+
 module.exports = {
+  OWNER_EMAILS,
+  OWNER_REPLY_TO,
+  isOwner,
+  listStudios,
+  recordStudio,
   DEFAULT_PREFS,
   FIRESTORE,
   bearer,

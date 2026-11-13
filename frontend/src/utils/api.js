@@ -397,6 +397,14 @@ export const authAPI = {
     };
     await setDoc(doc(db, 'users', credential.user.uid), profile);
 
+    // Welcome email to the new studio (and a note to Vela's owner). Best effort.
+    credential.user.getIdToken().then((token) => fetch('/api/welcome', {
+      method: 'POST',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: '{}',
+    })).catch(() => {});
+
     return {
       user: profile,
       redirectTo: studioRoute(),
@@ -522,8 +530,9 @@ export const clientsAPI = {
       portal_enabled: true,
       portal_created_at: now(),
     });
+    const welcome = await notify('client_welcome', id);
 
-    return getAccessibleDoc('clients', id, session);
+    return { ...(await getAccessibleDoc('clients', id, session)), welcome_emailed: Boolean(welcome?.sent) };
   },
 
   async remove(id) {
@@ -1497,10 +1506,10 @@ async function notify(event, id) {
   }
 }
 
-async function notifySettingsRequest(method, body) {
+async function notifySettingsRequest(method, body, query = '') {
   const token = await auth?.currentUser?.getIdToken();
   if (!token) throw new Error('Sign in again.');
-  const res = await fetch('/api/notify-settings', {
+  const res = await fetch(`/api/notify-settings${query}`, {
     method,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: body ? JSON.stringify(body) : undefined,
@@ -1515,6 +1524,26 @@ export const notifyAPI = {
   async getSettings() {
     await requireStudioSession();
     return notifySettingsRequest('GET');
+  },
+  // Once a session: tells Vela this studio is around, with its client and project counts.
+  async checkIn({ clients, projects } = {}) {
+    await requireStudioSession();
+    const q = new URLSearchParams({ checkin: '1' });
+    if (Number.isFinite(clients)) q.set('clients', String(clients));
+    if (Number.isFinite(projects)) q.set('projects', String(projects));
+    return notifySettingsRequest('GET', undefined, `?${q}`);
+  },
+};
+
+export const ownerAPI = {
+  // Every studio on Vela (only for Vela's owner).
+  async studios() {
+    await requireStudioSession();
+    const token = await auth?.currentUser?.getIdToken();
+    const res = await fetch('/api/owner', { headers: { Authorization: `Bearer ${token}` } });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Couldn’t load the studios.');
+    return json.studios || [];
   },
   async saveSettings(body, { test = false } = {}) {
     await requireStudioSession();

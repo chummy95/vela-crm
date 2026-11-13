@@ -6,10 +6,11 @@
 // Client did something → the studio is emailed (its address from notify settings):
 //   questionnaire_submitted, review_activity, contract_signed, client_message
 // Studio shared something → the client is emailed (their portal email):
-//   questionnaire_sent, review_shared, contract_sent, invoice_sent, studio_message
+//   questionnaire_sent, review_shared, contract_sent, invoice_sent, studio_message,
+//   client_welcome (once, when the studio gives the client portal access)
 
 const {
-  bearer, fresh, readDoc, renderEmail, sendEmail, signedInUser, siteUrl, studioSettings, throttled,
+  bearer, firstTime, fresh, readDoc, renderEmail, sendEmail, signedInUser, siteUrl, studioSettings, throttled,
 } = require('./_notify');
 
 const EVENTS = {
@@ -22,6 +23,7 @@ const EVENTS = {
   contract_sent: { collection: 'contracts', to: 'client' },
   invoice_sent: { collection: 'invoices', to: 'client' },
   studio_message: { collection: 'messages', to: 'client' },
+  client_welcome: { collection: 'clients', to: 'client' },
 };
 
 const lower = (s) => String(s || '').charAt(0).toLowerCase() + String(s || '').slice(1);
@@ -136,6 +138,26 @@ function clientEmail(event, doc, base, studio) {
       button: { label: 'Start the questionnaire', href: `${base}/portal/questionnaires/${doc.id}` },
     };
   }
+  if (event === 'client_welcome') {
+    return {
+      ok: Boolean(doc.portal_user_id) && fresh(doc.portal_created_at),
+      once: `client_welcome_${doc.id}`,
+      subject: `Your project portal with ${studio} is ready`,
+      eyebrow: 'Welcome',
+      headline: `Welcome, ${String(doc.portal_name || doc.contact || '').split(/\s+/)[0] || 'and hello'}`,
+      lines: [
+        `${studio} has set up a private portal for your project. It’s where you’ll find everything in one place:`,
+      ],
+      steps: [
+        ['Your project', 'See where things are at each stage, and what’s coming up next.'],
+        ['Review and approve', 'Look through new work, leave comments, and approve it or ask for changes.'],
+        ['Paperwork', 'Fill in questionnaires, sign your contract and pay invoices online.'],
+        ['Your files', 'Download your final files once the project is complete.'],
+      ],
+      button: { label: 'Open your portal', href: `${base}/portal/login` },
+      after: [`Sign in with ${doc.portal_email} and the password ${studio} shared with you. Forgotten it? Use “Forgot password?” on the sign-in page.`],
+    };
+  }
   if (event === 'studio_message') {
     return {
       ok: doc.sender_role === 'studio' && fresh(doc.sent_at, 10),
@@ -183,13 +205,14 @@ module.exports = async function handler(req, res) {
     const caller = await signedInUser(token);
     if (!caller || caller.uid !== doc.user_id) return res.status(403).json({ error: 'Not allowed.' });
     if (settings && settings.client_emails === false) return res.status(200).json({ sent: false, reason: 'Client emails are turned off in Settings.' });
-    const client = doc.client_id ? await readDoc(`clients/${doc.client_id}`, token) : null;
+    const client = spec.collection === 'clients' ? doc : doc.client_id ? await readDoc(`clients/${doc.client_id}`, token) : null;
     if (!client?.portal_user_id || !client.portal_email) return res.status(200).json({ sent: false, reason: 'This client doesn’t have portal access yet. Give them access on their client page first.' });
     const profile = (await readDoc(`studio_profiles/${doc.user_id}`, token)) || {};
     const studio = profile.business_name || caller.profile?.studio_name || settings?.name || 'Your designer';
     const mail = clientEmail(event, doc, base, studio);
     if (!mail.ok) return res.status(200).json({ sent: false, reason: 'Nothing new to send.' });
     if (mail.throttle && await throttled(req, mail.throttle, 20)) return res.status(200).json({ sent: false, reason: 'Already emailed recently.' });
+    if (mail.once && !(await firstTime(req, mail.once))) return res.status(200).json({ sent: false, reason: 'Already sent.' });
     const { html, text } = renderEmail({
       ...mail,
       brand: { name: studio, primary: profile.brand_primary, accent: profile.brand_accent },

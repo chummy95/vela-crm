@@ -1,9 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Shell from './Shell';
 import { useAuth } from '../hooks/useAuth';
 import { useStudioTheme } from '../hooks/useStudioTheme';
-import { notifyAPI } from '../utils/api';
+import { clientsAPI, notifyAPI, projectsAPI } from '../utils/api';
 import { QuestionnaireAlertsProvider, useQuestionnaireAlerts } from '../hooks/useQuestionnaireAlerts';
 
 const NAV = [
@@ -40,22 +40,37 @@ function StudioShell() {
   const navigate = useNavigate();
   const brand = useStudioTheme(user?.id ? `${user.role || 'u'}-${user.id}` : '');
 
-  // Make sure Vela knows where to email this studio (set up from the sign-in email the first time).
+  // Once a session: make sure Vela knows where to email this studio, and check in (last seen,
+  // client and project counts) for the owner's overview. Also tells us if this is Vela's owner.
+  const [isOwner, setIsOwner] = useState(() => {
+    try { return sessionStorage.getItem('vela-owner') === '1'; } catch { return false; }
+  });
   useEffect(() => {
     if (!user?.id) return;
-    const key = `vela-notify-ready-${user.id}`;
+    const key = `vela-checkin-${user.id}`;
     try { if (sessionStorage.getItem(key)) return; } catch { /* private mode */ }
-    notifyAPI.getSettings().then(() => { try { sessionStorage.setItem(key, '1'); } catch { /* private mode */ } }).catch(() => {});
+    Promise.all([clientsAPI.list().catch(() => null), projectsAPI.list().catch(() => null)])
+      .then(([clients, projects]) => notifyAPI.checkIn({ clients: clients?.length, projects: projects?.length }))
+      .then((result) => {
+        setIsOwner(Boolean(result?.owner));
+        try {
+          sessionStorage.setItem(key, '1');
+          sessionStorage.setItem('vela-owner', result?.owner ? '1' : '0');
+        } catch { /* private mode */ }
+      })
+      .catch(() => {});
   }, [user?.id]);
+  const navItems = isOwner ? [...nav, { to: '/owner', label: 'Owner', icon: 'chart', section: 'Vela' }] : nav;
 
   async function handleLogout() {
+    try { sessionStorage.removeItem('vela-owner'); } catch { /* private mode */ }
     await logout();
     navigate('/login');
   }
 
   return (
     <Shell
-      nav={nav}
+      nav={navItems}
       home="/"
       userName={user?.name || 'Studio'}
       userSub={user?.studio_name}
