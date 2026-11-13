@@ -329,6 +329,7 @@ export default function ClientProfile() {
                       <>
                         <div className="notice ok" style={{ marginBottom: 12 }}>
                           {client.portal_name || client.contact || client.name} can sign in with {client.portal_email || client.email || 'their portal email'}.
+                          {client.welcome_emailed && <> We’ve emailed them a welcome with the sign-in link. Share the password with them yourself.</>}
                         </div>
                         <button className="btn bg bsm" type="button" onClick={copyPortalLink}>
                           <Icon name={copied ? 'check' : 'copy'} />{copied ? 'Link copied' : 'Copy portal sign-in link'}
@@ -337,7 +338,7 @@ export default function ClientProfile() {
                     ) : (
                       <form onSubmit={handleCreatePortal}>
                         <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
-                          Give {client.contact || client.name} a login to see their projects, invoices and paperwork.
+                          Give {client.contact || client.name} a login to see their projects, invoices and paperwork. They’ll get a welcome email from your studio with the sign-in link.
                         </p>
                         <div className="fc">
                           <label className="fc-label" htmlFor="portal-name">Name</label>

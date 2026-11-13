@@ -2,7 +2,7 @@
 // GET returns them (creating them from the sign-in email the first time); POST saves them.
 // Only the signed-in studio can read or change its own settings.
 
-const { DEFAULT_PREFS, bearer, isEmail, renderEmail, sendEmail, signedInUser, siteUrl, studioSettings, writeJson, emailConfigured } = require('./_notify');
+const { DEFAULT_PREFS, bearer, isEmail, isOwner, recordStudio, renderEmail, sendEmail, signedInUser, siteUrl, studioSettings, writeJson, emailConfigured } = require('./_notify');
 const { storeConfigured } = require('./upload');
 
 function clean(body, current, caller) {
@@ -26,11 +26,21 @@ module.exports = async function handler(req, res) {
 
   try {
     const current = (await studioSettings(req, caller.uid)) || null;
+    const owner = isOwner(caller);
     if (req.method === 'GET') {
-      if (current) return res.status(200).json({ ...current, ready: emailConfigured() });
+      // Once a session the studio's app checks in here: note when it was last around and how many
+      // clients and projects it has, for the owner's overview.
+      if (req.query?.checkin) {
+        const count = (v) => (/^\d{1,6}$/.test(String(v ?? '')) ? Number(v) : undefined);
+        const extra = { last_seen: new Date().toISOString() };
+        if (count(req.query.clients) !== undefined) extra.clients = count(req.query.clients);
+        if (count(req.query.projects) !== undefined) extra.projects = count(req.query.projects);
+        await recordStudio(req, caller, extra).catch(() => {});
+      }
+      if (current) return res.status(200).json({ ...current, owner, ready: emailConfigured() });
       const created = clean({}, {}, caller);
       await writeJson(req, `notify/studios/${caller.uid}.json`, created);
-      return res.status(200).json({ ...created, ready: emailConfigured() });
+      return res.status(200).json({ ...created, owner, ready: emailConfigured() });
     }
 
     const next = clean(req.body || {}, current || {}, caller);
@@ -45,9 +55,9 @@ module.exports = async function handler(req, res) {
         footer: 'You asked for this test email in Vela Settings.',
       });
       const result = await sendEmail({ to: next.email, subject: 'Your Vela emails are working', html, text });
-      return res.status(200).json({ ...next, ready: emailConfigured(), test: result });
+      return res.status(200).json({ ...next, owner, ready: emailConfigured(), test: result });
     }
-    return res.status(200).json({ ...next, ready: emailConfigured() });
+    return res.status(200).json({ ...next, owner, ready: emailConfigured() });
   } catch (error) {
     return res.status(400).json({ error: error.message || 'Couldn’t save your email settings.' });
   }

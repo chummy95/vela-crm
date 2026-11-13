@@ -285,11 +285,24 @@ export const invoicesAPI = {
 
 let notifySettings = { email: 'mayaa@creativemayaa.studio', studio_emails: true, enquiry_emails: true, client_emails: true, ready: true };
 export const notifyAPI = {
-  async getSettings() { return delay({ ...notifySettings }); },
+  async getSettings() { return delay({ ...notifySettings, owner: true }); },
+  async checkIn() { return delay({ ...notifySettings, owner: true }); },
   async saveSettings(body, { test = false } = {}) {
     if (body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) throw new Error('Enter a valid email address.');
     notifySettings = { ...notifySettings, ...body };
     return delay({ ...notifySettings, test: test ? { sent: true } : undefined });
+  },
+};
+
+export const ownerAPI = {
+  async studios() {
+    const d = (n) => new Date(Date.now() - n * 86400000).toISOString();
+    return delay([
+      { uid: 'u4', name: 'Hana Yusuf', studio: 'Studio Oud', email: 'hana@studiooud.co', created_at: d(0.2), last_seen: d(0.1), clients: 1, projects: 0 },
+      { uid: 'u3', name: 'Sophie Grant', studio: 'Fern & Field', email: 'sophie@fernandfield.co.uk', created_at: d(3), last_seen: d(1), clients: 4, projects: 2 },
+      { uid: 'u2', name: 'Sahar Al-Mutairi', studio: 'Atelier Sahar', email: 'sahar@ateliersahar.sa', created_at: d(9), last_seen: d(12), clients: 0, projects: 0 },
+      { uid: 'demo-studio', name: 'Mayaa', studio: 'Creative Mayaa Studio', email: 'creativemayaa@gmail.com', created_at: d(26), last_seen: d(0), clients: 5, projects: 3, owner: true },
+    ]);
   },
 };
 
