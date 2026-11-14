@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import Icon from '../components/Icon';
 import Pill from '../components/Pill';
 import { ProposalDocument } from '../components/Documents';
+import PdfDocumentView from '../components/PdfDocumentView';
 import { proposalsAPI } from '../utils/api';
 import { formatDate, formatMoney } from '../utils/format';
 
@@ -32,7 +33,18 @@ export default function PortalProposals() {
         </div>
         <div className="content">
           <div className="page" style={{ maxWidth: 820 }}>
-            {selected ? <ProposalDocument proposal={selected} brand={brand} /> : <div className="panel empty" style={{ padding: 40 }}>{loaded ? 'This proposal isn’t available.' : 'Loading…'}</div>}
+            {selected && (selected.files || [])[0] && (
+              <header style={{ marginBottom: 18 }}>
+                <div className="muted" style={{ fontSize: 13.5 }}>{brand?.business_name ? `From ${brand.business_name}` : 'Proposal'}{selected.sent_at ? `, ${formatDate(selected.sent_at, { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}</div>
+                <h1 className="h-display" style={{ fontSize: 30 }}>{selected.service || 'Your proposal'}</h1>
+                {selected.note && <p className="muted" style={{ marginTop: 8, whiteSpace: 'pre-wrap', maxWidth: '62ch' }}>{selected.note}</p>}
+              </header>
+            )}
+            {selected
+              ? ((selected.files || [])[0]
+                ? <PdfDocumentView proposalId={selected.id} file={selected.files[0]} />
+                : <ProposalDocument proposal={selected} brand={brand} />)
+              : <div className="panel empty" style={{ padding: 40 }}>{loaded ? 'This proposal isn’t available.' : 'Loading…'}</div>}
           </div>
         </div>
       </>

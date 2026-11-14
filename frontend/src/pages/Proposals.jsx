@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useStudioProfile } from '../hooks/useStudioProfile';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Modal from '../components/Modal';
@@ -6,6 +6,7 @@ import Pill from '../components/Pill';
 import Icon from '../components/Icon';
 import ClientMark from '../components/ClientMark';
 import { ProposalDocument } from '../components/Documents';
+import PdfDocumentView from '../components/PdfDocumentView';
 import { useAuth } from '../hooks/useAuth';
 import { clientsAPI, proposalsAPI } from '../utils/api';
 import { formatDate, formatMoney, parseAmount } from '../utils/format';
@@ -18,6 +19,13 @@ const FILTERS = [
 ];
 
 const NEXT_STATUS = { draft: { status: 'sent', label: 'Mark as sent' }, sent: { status: 'approved', label: 'Mark approved' } };
+
+const isPdf = (file) => file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || ''));
+
+function fileSize(bytes) {
+  if (!bytes) return '';
+  return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 function blankProposal(client) {
   return {
@@ -82,6 +90,16 @@ export default function Proposals() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const fileRef = useRef(null);
+  const [createFile, setCreateFile] = useState(null);
+  const [uploading, setUploading] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendNote, setSendNote] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
+  const [notice, setNotice] = useState('');
+
   useEffect(() => {
     Promise.all([proposalsAPI.list(), clientsAPI.list()])
       .then(([rows, clientRows]) => { setProposals(rows); setClients(clientRows); })
@@ -98,6 +116,7 @@ export default function Proposals() {
     setSavedAt('');
     setDetailError('');
     setConfirmDelete(false);
+    setNotice('');
   }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const counts = useMemo(() => ({
@@ -119,6 +138,7 @@ export default function Proposals() {
   }
 
   function openCreate() {
+    setCreateFile(null);
     setCreateForm(blankProposal(clients[0]));
     setCreateError('');
     setCreateOpen(true);
@@ -129,9 +149,22 @@ export default function Proposals() {
     setSavingCreate(true);
     setCreateError('');
     try {
-      const created = await proposalsAPI.create(formToPayload(createForm));
+      if (createFile && !isPdf(createFile)) throw new Error('Upload your proposal as a PDF.');
+      let created = await proposalsAPI.create(formToPayload(createForm));
+      if (createFile) {
+        try {
+          created = { ...created, ...(await proposalsAPI.attachDocument(created.id, createFile)) };
+        } catch (err) {
+          setProposals((prev) => [created, ...prev]);
+          setCreateOpen(false);
+          navigate(`/proposals/${created.id}`);
+          setDetailError(`The proposal was created, but the document didn’t upload: ${err.message}`);
+          return;
+        }
+      }
       setProposals((prev) => [created, ...prev]);
       setCreateOpen(false);
+      setCreateFile(null);
       navigate(`/proposals/${created.id}`);
     } catch (err) {
       setCreateError(err.message);
@@ -163,6 +196,52 @@ export default function Proposals() {
       setProposals((prev) => prev.map((p) => (p.id === proposal.id ? { ...p, ...(updated || {}), status } : p)));
     } catch (err) {
       setPageError(err.message);
+    }
+  }
+
+  async function attach(file) {
+    if (!file) return;
+    if (!isPdf(file)) { setDetailError('Upload your proposal as a PDF.'); return; }
+    setDetailError('');
+    setUploading(1);
+    try {
+      const updated = await proposalsAPI.attachDocument(selected.id, file, { onProgress: (pct) => setUploading(Math.max(1, Math.round(pct))) });
+      setProposals((prev) => prev.map((p) => (p.id === selected.id ? { ...p, ...updated } : p)));
+    } catch (err) {
+      setDetailError(err.message);
+    } finally {
+      setUploading(0);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
+  async function detach() {
+    setDetailError('');
+    try {
+      const updated = await proposalsAPI.removeDocument(selected.id);
+      setProposals((prev) => prev.map((p) => (p.id === selected.id ? { ...p, ...updated, files: [] } : p)));
+    } catch (err) {
+      setDetailError(err.message);
+    }
+  }
+
+  async function sendToClient() {
+    setSending(true);
+    setSendError('');
+    try {
+      if (dirty) await proposalsAPI.update(selected.id, formToPayload(form));
+      const updated = await proposalsAPI.send(selected.id, { note: sendNote });
+      setProposals((prev) => prev.map((p) => (p.id === selected.id ? { ...p, ...updated } : p)));
+      setForm((f) => ({ ...f, status: 'sent' }));
+      setDirty(false);
+      setSendOpen(false);
+      setNotice(updated.emailed?.sent
+        ? `Sent. ${selected.client_name} can see it in their portal, and we emailed them a link${updated.emailed.to ? ` at ${updated.emailed.to}` : ''}.`
+        : `Marked as sent, but no email went out: ${updated.emailed?.reason || updated.emailed?.error || 'the email couldn’t be sent.'}`);
+    } catch (err) {
+      setSendError(err.message);
+    } finally {
+      setSending(false);
     }
   }
 
@@ -200,6 +279,9 @@ export default function Proposals() {
     if (!selected) return <div className="content"><div className="muted">Loading…</div></div>;
 
     const next = NEXT_STATUS[form.status || 'draft'];
+    const documentFile = (selected.files || [])[0] || null;
+    const status = form.status || 'draft';
+    const client = clients.find((c) => c.id === form.client_id);
 
     return (
       <>
@@ -207,13 +289,19 @@ export default function Proposals() {
           <nav className="tb-crumb" aria-label="Breadcrumb"><Link to="/proposals"><Icon name="back" size={16} />Proposals</Link></nav>
           <div className="tb-r">
             <span className="faint" style={{ fontSize: 12.5 }}>{saving ? 'Saving…' : dirty ? 'Unsaved changes' : savedAt ? `Saved at ${savedAt}` : ''}</span>
-            {next && <button className="btn bg" type="button" disabled={saving} onClick={() => save({ status: next.status })}>{next.label}</button>}
-            <button className="btn bp" type="button" disabled={saving || !dirty} onClick={() => save()}>Save</button>
+            {status === 'sent' && next && <button className="btn bg" type="button" disabled={saving} onClick={() => save({ status: next.status })}>{next.label}</button>}
+            <button className={status === 'draft' ? 'btn bg' : 'btn bp'} type="button" disabled={saving || !dirty} onClick={() => save()}>Save</button>
+            {status !== 'approved' && (
+              <button className={status === 'draft' ? 'btn bp' : 'btn bg'} type="button" disabled={saving || uploading > 0} onClick={() => { setSendNote(''); setSendError(''); setSendOpen(true); }}>
+                <Icon name="send" />{status === 'draft' ? 'Send to client' : 'Send again'}
+              </button>
+            )}
           </div>
         </div>
         <div className="content">
           <div className="page">
             {detailError && <div className="form-error">{detailError}</div>}
+            {notice && <div className="notice ok" role="status" style={{ marginBottom: 16 }}>{notice}</div>}
             <div className="editor-split">
               <form className="panel" style={{ padding: 22 }} onSubmit={(e) => { e.preventDefault(); save(); }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -238,13 +326,48 @@ export default function Proposals() {
                     </select>
                   </Field>
                 </div>
-                <Field id="pp-intro" label="Opening note"><textarea id="pp-intro" className="fi" value={form.intro} onChange={edit('intro')} placeholder="A short, personal hello to the client" /></Field>
-                <Field id="pp-overview" label="Project overview"><textarea id="pp-overview" className="fi" value={form.overview} onChange={edit('overview')} /></Field>
-                <Field id="pp-packages" label="Packages" hint="one per line"><textarea id="pp-packages" className="fi" value={form.packages} onChange={edit('packages')} /></Field>
-                <Field id="pp-deliv" label="Deliverables" hint="one per line"><textarea id="pp-deliv" className="fi" value={form.deliverables} onChange={edit('deliverables')} /></Field>
-                <Field id="pp-timeline" label="Timeline" hint="one per line"><textarea id="pp-timeline" className="fi" value={form.timeline} onChange={edit('timeline')} /></Field>
-                <Field id="pp-process" label="How we’ll work"><textarea id="pp-process" className="fi" value={form.process} onChange={edit('process')} /></Field>
-                <Field id="pp-terms" label="Terms"><textarea id="pp-terms" className="fi" value={form.terms} onChange={edit('terms')} /></Field>
+                <div className="fc">
+                  <span className="fc-label">Your proposal document</span>
+                  {documentFile ? (
+                    <div className="doc-file">
+                      <span className="ico-pdf" aria-hidden="true">PDF</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span className="row-title" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{documentFile.name}</span>
+                        <span className="row-sub" style={{ display: 'block' }}>{[fileSize(documentFile.size), documentFile.uploaded_at ? `uploaded ${formatDate(documentFile.uploaded_at)}` : ''].filter(Boolean).join(', ')}</span>
+                      </span>
+                      <button className="btn bg bxs" type="button" disabled={uploading > 0} onClick={() => fileRef.current?.click()}>{uploading ? `${uploading}%` : 'Replace'}</button>
+                      <button className="btn bq bxs" type="button" disabled={uploading > 0} onClick={detach}>Remove</button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className={`doc-drop${dragOver ? ' over' : ''}`}
+                      disabled={uploading > 0}
+                      onClick={() => fileRef.current?.click()}
+                      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={(e) => { e.preventDefault(); setDragOver(false); attach(e.dataTransfer.files?.[0]); }}
+                    >
+                      <Icon name="plus" size={18} />
+                      <span>{uploading ? `Uploading… ${uploading}%` : 'Upload your proposal (PDF)'}</span>
+                      <span className="faint" style={{ fontSize: 12.5, fontWeight: 400 }}>Already designed your proposal? Upload it and send it from here. Or write it in Vela below.</span>
+                    </button>
+                  )}
+                  <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => attach(e.target.files?.[0])} />
+                </div>
+                {documentFile ? (
+                  <p className="muted" style={{ fontSize: 13, margin: '4px 0 16px' }}>Your client sees this document. Remove it if you’d rather write the proposal in Vela.</p>
+                ) : (
+                  <>
+                    <Field id="pp-intro" label="Opening note"><textarea id="pp-intro" className="fi" value={form.intro} onChange={edit('intro')} placeholder="A short, personal hello to the client" /></Field>
+                    <Field id="pp-overview" label="Project overview"><textarea id="pp-overview" className="fi" value={form.overview} onChange={edit('overview')} /></Field>
+                    <Field id="pp-packages" label="Packages" hint="one per line"><textarea id="pp-packages" className="fi" value={form.packages} onChange={edit('packages')} /></Field>
+                    <Field id="pp-deliv" label="Deliverables" hint="one per line"><textarea id="pp-deliv" className="fi" value={form.deliverables} onChange={edit('deliverables')} /></Field>
+                    <Field id="pp-timeline" label="Timeline" hint="one per line"><textarea id="pp-timeline" className="fi" value={form.timeline} onChange={edit('timeline')} /></Field>
+                    <Field id="pp-process" label="How we’ll work"><textarea id="pp-process" className="fi" value={form.process} onChange={edit('process')} /></Field>
+                    <Field id="pp-terms" label="Terms"><textarea id="pp-terms" className="fi" value={form.terms} onChange={edit('terms')} /></Field>
+                  </>
+                )}
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
                   <button className="btn bd" type="button" onClick={handleDelete} disabled={deleting}>
                     {deleting ? 'Deleting…' : confirmDelete ? 'Yes, delete proposal' : 'Delete proposal'}
@@ -253,10 +376,48 @@ export default function Proposals() {
                 </div>
               </form>
 
-              <ProposalDocument proposal={form} studioName={user?.studio_name} currency={currency} brand={brand} emptyHint="Fill in the details on the left and the proposal takes shape here." />
+              {documentFile
+                ? <PdfDocumentView proposalId={selected.id} file={documentFile} />
+                : <ProposalDocument proposal={form} studioName={user?.studio_name} currency={currency} brand={brand} emptyHint="Fill in the details on the left and the proposal takes shape here." />}
             </div>
           </div>
         </div>
+
+        <Modal
+          open={sendOpen}
+          onClose={() => setSendOpen(false)}
+          title={status === 'draft' ? 'Send this proposal' : 'Send the proposal again'}
+          footer={
+            <>
+              <button className="btn bg" type="button" onClick={() => setSendOpen(false)}>Cancel</button>
+              <button className="btn bp" type="button" disabled={sending || !form.client_id} onClick={sendToClient}><Icon name="send" />{sending ? 'Sending…' : 'Send'}</button>
+            </>
+          }
+        >
+          {sendError && <div className="form-error">{sendError}</div>}
+          {!form.client_id ? (
+            <p className="muted">Choose a client for this proposal first, then send it.</p>
+          ) : (
+            <>
+              <p style={{ marginBottom: 12 }}>
+                {client?.name || form.client_name} will see {documentFile ? <b>{documentFile.name}</b> : 'this proposal'} in their portal
+                {client?.portal_user_id ? <>, and we’ll email them a link at <b>{client.portal_email}</b>.</> : '.'}
+              </p>
+              {!client?.portal_user_id && (
+                <div className="notice" style={{ marginBottom: 12 }}>
+                  {client?.name || 'This client'} doesn’t have portal access yet, so no email will go out. <Link to={`/clients/${form.client_id}`}>Give them access</Link> first if you’d like them to get it by email.
+                </div>
+              )}
+              {!documentFile && !form.overview && !form.intro && !form.packages && (
+                <div className="notice" style={{ marginBottom: 12 }}>This proposal is still empty. Upload your document or write it in Vela before sending.</div>
+              )}
+              <div className="fc" style={{ marginBottom: 0 }}>
+                <label className="fc-label" htmlFor="pp-send-note">A short message <span className="faint" style={{ fontWeight: 400 }}>optional, shown in the email</span></label>
+                <textarea id="pp-send-note" className="fi" rows={3} value={sendNote} onChange={(e) => setSendNote(e.target.value)} placeholder={`Hi ${(client?.contact || '').split(' ')[0] || 'there'}, here’s the proposal we talked about. Let me know if you have any questions.`} />
+              </div>
+            </>
+          )}
+        </Modal>
       </>
     );
   }
@@ -303,7 +464,7 @@ export default function Proposals() {
                             <span style={{ fontWeight: 500 }}>{p.client_name || 'No client linked'}</span>
                           </div>
                         </td>
-                        <td>{p.service || '—'}</td>
+                        <td>{p.service || '—'}{(p.files || []).length > 0 && <span className="faint" style={{ fontSize: 12, marginLeft: 8 }}>PDF</span>}</td>
                         <td className="r num" style={{ fontWeight: 500 }}>{p.value ? formatMoney(p.value, currency) : '—'}</td>
                         <td className="hide-sm muted">{formatDate(p.date || p.created_at)}</td>
                         <td><Pill status={p.status || 'draft'} /></td>
@@ -334,7 +495,7 @@ export default function Proposals() {
         footer={
           <>
             <button className="btn bg" type="button" onClick={() => setCreateOpen(false)}>Cancel</button>
-            <button className="btn bp" type="submit" form="proposal-create" disabled={savingCreate}>{savingCreate ? 'Creating…' : 'Create and open'}</button>
+            <button className="btn bp" type="submit" form="proposal-create" disabled={savingCreate}>{savingCreate ? (createFile ? 'Uploading…' : 'Creating…') : 'Create and open'}</button>
           </>
         }
       >
@@ -350,7 +511,10 @@ export default function Proposals() {
             <Field id="ppc-service" label="Service"><input id="ppc-service" className="fi" value={createForm.service} onChange={(e) => setCreateForm({ ...createForm, service: e.target.value })} placeholder="Brand Identity" required autoFocus /></Field>
             <Field id="ppc-value" label="Quoted value"><input id="ppc-value" className="fi" inputMode="decimal" value={createForm.value} onChange={(e) => setCreateForm({ ...createForm, value: e.target.value })} placeholder="4500" /></Field>
           </div>
-          <p className="muted" style={{ fontSize: 13 }}>You’ll write the rest in the editor, with a live preview beside it.</p>
+          <Field id="ppc-file" label="Proposal document" hint="optional, PDF">
+            <input id="ppc-file" className="fi" type="file" accept="application/pdf,.pdf" onChange={(e) => setCreateFile(e.target.files?.[0] || null)} />
+          </Field>
+          <p className="muted" style={{ fontSize: 13 }}>Upload the proposal you’ve already designed, or leave this empty and write it in Vela, with a live preview beside it.</p>
         </form>
       </Modal>
     </>

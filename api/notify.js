@@ -7,7 +7,7 @@
 //   questionnaire_submitted, review_activity, contract_signed, client_message
 // Studio shared something → the client is emailed (their portal email):
 //   questionnaire_sent, review_shared, contract_sent, invoice_sent, studio_message,
-//   client_welcome (once, when the studio gives the client portal access)
+//   client_welcome (once, when the studio gives the client portal access), proposal_sent
 
 const {
   bearer, firstTime, fresh, readDoc, renderEmail, sendEmail, signedInUser, siteUrl, studioSettings, throttled,
@@ -24,6 +24,7 @@ const EVENTS = {
   invoice_sent: { collection: 'invoices', to: 'client' },
   studio_message: { collection: 'messages', to: 'client' },
   client_welcome: { collection: 'clients', to: 'client' },
+  proposal_sent: { collection: 'proposals', to: 'client' },
 };
 
 const lower = (s) => String(s || '').charAt(0).toLowerCase() + String(s || '').slice(1);
@@ -136,6 +137,21 @@ function clientEmail(event, doc, base, studio) {
       headline: `A few questions from ${studio}`,
       lines: [doc.description ? String(doc.description).slice(0, 600) : '', 'Your answers save as you go, so you can come back to it.'],
       button: { label: 'Start the questionnaire', href: `${base}/portal/questionnaires/${doc.id}` },
+    };
+  }
+  if (event === 'proposal_sent') {
+    const value = doc.value ? money(String(doc.value).replace(/[^0-9.]/g, ''), doc.currency) : '';
+    return {
+      ok: doc.status === 'sent' && fresh(doc.sent_at),
+      subject: `Your proposal from ${studio}`,
+      eyebrow: 'Proposal',
+      headline: `Your ${lower(doc.service) || 'project'} proposal is ready`,
+      lines: [
+        doc.note ? `“${String(doc.note).slice(0, 600)}”` : `${studio} has put together a proposal for your project.`,
+        value ? `Investment: ${value}` : '',
+        'Take your time to read it through. Reply to this email or message them in your portal with any questions.',
+      ],
+      button: { label: 'View the proposal', href: `${base}/portal/proposals/${doc.id}` },
     };
   }
   if (event === 'client_welcome') {
