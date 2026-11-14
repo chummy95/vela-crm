@@ -317,7 +317,24 @@ export const paymentsAPI = {
   },
 };
 
-export const proposalsAPI = crud('proposals');
+export const proposalsAPI = {
+  ...crud('proposals'),
+  async attachDocument(rid, file, { onProgress } = {}) {
+    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name || '')) throw new Error('Upload your proposal as a PDF.');
+    for (const pct of [30, 70, 100]) { await new Promise((r) => setTimeout(r, 80)); onProgress?.(pct); }
+    const row = byId('proposals', rid);
+    row.files = [{ name: file.name, url: URL.createObjectURL(file), type: 'application/pdf', size: file.size, kind: 'file', uploaded_at: new Date().toISOString() }];
+    return delay({ ...row });
+  },
+  async removeDocument(rid) { const row = byId('proposals', rid); row.files = []; return delay({ ...row }); },
+  async send(rid, { note = '' } = {}) {
+    const row = byId('proposals', rid);
+    if (!row.client_id) throw new Error('Choose a client for this proposal first.');
+    Object.assign(row, { status: 'sent', sent_at: new Date().toISOString(), note });
+    const client = byId('clients', row.client_id);
+    return delay({ ...row, emailed: client?.portal_user_id ? { sent: true, to: client.portal_email } : { sent: false, reason: 'This client doesn’t have portal access yet. Give them access on their client page first.' } });
+  },
+};
 const contractListeners = new Set();
 const emitContracts = () => contractListeners.forEach((fn) => fn(JSON.parse(JSON.stringify(db.contracts))));
 export const contractsAPI = {

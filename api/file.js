@@ -1,4 +1,5 @@
-// Gives short-lived links to private files attached to shared work.
+// Gives short-lived links to private files attached to shared work (reviews) and to proposal
+// documents.
 //
 // Files live in a private Vercel Blob store, so they can't be opened from their stored URL.
 // The browser sends the review id and its Firebase sign-in token; this route reads the review
@@ -6,7 +7,7 @@
 // studio that owns it, or that client). Only files listed on that review get a link, and each
 // link works for one hour.
 
-const { blobAuth, storeConfigured } = require('./upload');
+const { blobAuth, storeConfigured, uidFromToken } = require('./upload');
 
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'vela-crm-2ca57';
 const LINK_MINUTES = 60;
@@ -25,20 +26,28 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
   const reviewId = String(req.body?.reviewId || '').trim();
+  const proposalId = String(req.body?.proposalId || '').trim();
+  const [collection, recordId] = proposalId ? ['proposals', proposalId] : ['reviews', reviewId];
   const wanted = Array.isArray(req.body?.urls) ? req.body.urls.map(String).slice(0, 50) : [];
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(reviewId) || !token || !wanted.length) {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(recordId) || !token || !wanted.length) {
     return res.status(400).json({ error: 'Missing file or sign-in.' });
   }
   if (!storeConfigured()) {
     return res.status(503).json({ error: 'File storage isn’t set up yet.' });
   }
 
-  const docRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/reviews/${reviewId}`, {
+  const docRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collection}/${recordId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!docRes.ok) return res.status(403).json({ error: 'Not allowed.' });
-  const files = filesFromDoc(await docRes.json());
+  const record = await docRes.json();
+  // A proposal the studio hasn't sent yet stays private to the studio.
+  if (collection === 'proposals' && (record?.fields?.status?.stringValue || 'draft') === 'draft'
+    && record?.fields?.user_id?.stringValue !== uidFromToken(token)) {
+    return res.status(403).json({ error: 'This proposal hasn’t been sent yet.' });
+  }
+  const files = filesFromDoc(record);
 
   try {
     const { issueSignedToken, presignUrl } = await import('@vercel/blob');

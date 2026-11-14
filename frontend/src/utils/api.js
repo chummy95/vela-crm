@@ -1027,6 +1027,36 @@ export const proposalsAPI = {
     return getAccessibleDoc('proposals', id, session);
   },
 
+  // The studio's own proposal document (a PDF), stored privately; the client sees it once sent.
+  async attachDocument(id, file, { onProgress } = {}) {
+    const session = await requireStudioSession();
+    await getAccessibleDoc('proposals', id, session);
+    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name || '')) throw new Error('Upload your proposal as a PDF.');
+    if (file.size > 50 * 1024 * 1024) throw new Error('That PDF is over 50 MB. Export a smaller version and try again.');
+    const uploaded = await uploadsAPI.upload(file, { folder: 'proposals', onProgress });
+    const document = { ...uploaded, type: 'application/pdf', uploaded_at: now() };
+    await updateDoc(doc(db, 'proposals', id), { files: [document] });
+    return getAccessibleDoc('proposals', id, session);
+  },
+
+  async removeDocument(id) {
+    const session = await requireStudioSession();
+    await getAccessibleDoc('proposals', id, session);
+    await updateDoc(doc(db, 'proposals', id), { files: [] });
+    return getAccessibleDoc('proposals', id, session);
+  },
+
+  // Shares the proposal with the client and emails them a link (if they have portal access).
+  async send(id, { note = '' } = {}) {
+    const session = await requireStudioSession();
+    const current = await getAccessibleDoc('proposals', id, session);
+    if (!current.client_id) throw new Error('Choose a client for this proposal first.');
+    const stamp = now();
+    await updateDoc(doc(db, 'proposals', id), { status: 'sent', sent_at: stamp, note: text(note).slice(0, 1000) });
+    const emailed = await notify('proposal_sent', id);
+    return { ...(await getAccessibleDoc('proposals', id, session)), emailed };
+  },
+
   async remove(id) {
     return deleteStudioDoc('proposals', id);
   },
@@ -1909,16 +1939,16 @@ export const uploadsAPI = {
 };
 
 export const filesAPI = {
-  // Short-lived links (one hour) for the private files on a review.
-  async links(reviewId, urls) {
+  // Short-lived links (one hour) for the private files on a review, or a proposal's document.
+  async links(reviewId, urls, { proposalId = '' } = {}) {
     const wanted = (urls || []).filter(Boolean);
-    if (!reviewId || !wanted.length) return {};
+    if ((!reviewId && !proposalId) || !wanted.length) return {};
     await requireSession();
     const token = await auth.currentUser.getIdToken();
     const res = await fetch('/api/file', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ reviewId, urls: wanted }),
+      body: JSON.stringify(proposalId ? { proposalId, urls: wanted } : { reviewId, urls: wanted }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Couldn’t open these files.');
