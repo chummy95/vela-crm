@@ -13,7 +13,7 @@ const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'vela-crm-2ca57';
 const LINK_MINUTES = 60;
 
 function filesFromDoc(doc) {
-  const values = doc?.fields?.files?.arrayValue?.values || [];
+  const values = doc?.fields?.files?.arrayValue?.values || doc?.fields?.photos?.arrayValue?.values || [];
   return values.map((v) => {
     const f = v?.mapValue?.fields || {};
     return { url: f.url?.stringValue || '', pathname: f.pathname?.stringValue || '' };
@@ -27,7 +27,9 @@ module.exports = async function handler(req, res) {
   }
   const reviewId = String(req.body?.reviewId || '').trim();
   const proposalId = String(req.body?.proposalId || '').trim();
-  const [collection, recordId] = proposalId ? ['proposals', proposalId] : ['reviews', reviewId];
+  const noteId = String(req.body?.noteId || '').trim();
+  // Client record photos (client_notes) are readable by the studio only, so only it gets links.
+  const [collection, recordId] = noteId ? ['client_notes', noteId] : proposalId ? ['proposals', proposalId] : ['reviews', reviewId];
   const wanted = Array.isArray(req.body?.urls) ? req.body.urls.map(String).slice(0, 50) : [];
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(recordId) || !token || !wanted.length) {

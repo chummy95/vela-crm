@@ -25,6 +25,7 @@ const EVENTS = {
   studio_message: { collection: 'messages', to: 'client' },
   client_welcome: { collection: 'clients', to: 'client' },
   proposal_sent: { collection: 'proposals', to: 'client' },
+  next_steps_shared: { collection: 'shared_steps', to: 'client' },
 };
 
 const lower = (s) => String(s || '').charAt(0).toLowerCase() + String(s || '').slice(1);
@@ -137,6 +138,19 @@ function clientEmail(event, doc, base, studio) {
       headline: `A few questions from ${studio}`,
       lines: [doc.description ? String(doc.description).slice(0, 600) : '', 'Your answers save as you go, so you can come back to it.'],
       button: { label: 'Start the questionnaire', href: `${base}/portal/questionnaires/${doc.id}` },
+    };
+  }
+  if (event === 'next_steps_shared') {
+    // Deliberately says nothing about the client's care in the email itself: the details stay in
+    // the portal, behind their sign-in.
+    return {
+      ok: fresh(doc.shared_at),
+      throttle: `steps_${doc.client_id}`,
+      subject: `An update from ${studio}`,
+      eyebrow: 'Next steps',
+      headline: `${studio} shared your next steps`,
+      lines: ['Sign in to your portal to read them. If anything is unclear, you can message them from there too.'],
+      button: { label: 'See your next steps', href: `${base}/portal` },
     };
   }
   if (event === 'proposal_sent') {

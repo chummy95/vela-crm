@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import Icon from './Icon';
 
-export default function Modal({ open, onClose, title, children, footer }) {
+export default function Modal({ open, onClose, title, children, footer, wide = false }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose(); };
     if (open) window.addEventListener('keydown', handler);
@@ -12,7 +12,7 @@ export default function Modal({ open, onClose, title, children, footer }) {
 
   return (
     <div className="mo open" onClick={e => { if(e.target === e.currentTarget) onClose(); }}>
-      <div className="md" role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}>
+      <div className={`md${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}>
         <div className="mh">
           <span className="mt">{title}</span>
           <button className="mc" type="button" onClick={onClose} aria-label="Close"><Icon name="close" size={18} /></button>
