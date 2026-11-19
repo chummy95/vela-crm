@@ -120,9 +120,47 @@ export function projectFeedbackStarter() {
   };
 }
 
+// For skin clinics and aestheticians: filled in before the first consultation.
+// Asks only what's needed to treat safely, and records the client's consent.
+export function skinConsultationStarter() {
+  return {
+    title: 'Skin pre-consultation form',
+    description: 'Thank you for booking. Please fill this in before your appointment so we can plan a treatment that is safe and right for your skin. Your answers are private and only seen by your practitioner. It takes about ten minutes, and it saves as you go.',
+    questions: [
+      q('section', 'About you'),
+      q('text', 'Date of birth', { required: true }),
+      q('text', 'Phone number'),
+      q('choice', 'Is this your first visit?', { options: 'Yes, No' }),
+
+      q('section', 'Your skin'),
+      q('checkboxes', 'What would you like help with?', { required: true, options: 'Acne or breakouts, Pigmentation, Redness or rosacea, Fine lines and wrinkles, Dryness or dehydration, Oiliness, Sensitivity, Scarring, Uneven texture, Other' }),
+      q('textarea', 'Tell us more about your main skin concern and how long you’ve had it.', { required: true }),
+      q('choice', 'How would you describe your skin?', { options: 'Dry, Oily, Combination, Normal, Sensitive, Not sure' }),
+      q('choice', 'How does your skin react to the sun?', { options: 'Always burns, Burns then tans, Rarely burns, Never burns' }),
+      q('textarea', 'Which products do you use on your skin now? (cleanser, serums, moisturiser, SPF, anything else)'),
+      q('choice', 'Are you using any retinoids, exfoliating acids or prescription skin creams?', { required: true, options: 'Yes, No, Not sure' }),
+      q('textarea', 'If yes, which ones and when did you last use them?'),
+
+      q('section', 'Health'),
+      q('textarea', 'Do you have any medical conditions we should know about?', { required: true, help: 'For example diabetes, autoimmune or skin conditions, cold sores, or a history of keloid scarring. Write “none” if not.' }),
+      q('textarea', 'Are you taking any medication or supplements?', { required: true, help: 'Including acne medication (such as isotretinoin) in the last 12 months. Write “none” if not.' }),
+      q('textarea', 'Do you have any allergies or sensitivities?', { required: true, help: 'To products, ingredients, medication or latex. Write “none” if not.' }),
+      q('choice', 'Are you pregnant, trying to conceive or breastfeeding?', { required: true, options: 'Yes, No, Prefer to discuss in person' }),
+      q('textarea', 'Have you had any cosmetic treatments in the last six months? (peels, laser, injectables, microneedling, waxing or threading on the face)'),
+
+      q('section', 'Consent'),
+      q('checkboxes', 'Please confirm', {
+        required: true,
+        options: 'The information I’ve given is true and complete to the best of my knowledge, I’ll let my practitioner know if anything changes before a treatment, I agree to my details and progress photos being kept securely in my client record',
+      }),
+    ],
+  };
+}
+
 export const STARTERS = {
   brand_strategy: brandStrategyStarter,
   project_feedback: projectFeedbackStarter,
+  skin_consultation: skinConsultationStarter,
 };
 
 export const RESPONSE_STATUS = {

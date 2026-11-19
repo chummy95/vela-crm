@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { JourneyRail } from '../components/ProjectJourney';
 import { useAuth } from '../hooks/useAuth';
-import { clientsAPI, contractsAPI, eventsAPI, invoicesAPI, messagesAPI, projectsAPI, proposalsAPI, questionnairesAPI, reviewsAPI } from '../utils/api';
+import { clientsAPI, contractsAPI, eventsAPI, invoicesAPI, messagesAPI, projectsAPI, proposalsAPI, questionnairesAPI, reviewsAPI, sharedStepsAPI } from '../utils/api';
 import { progress } from '../utils/questionnaires';
 import { daysFromToday, formatDate, formatMoney, greeting, isOverdue, relativeDay, stageLabel, stageLabels } from '../utils/format';
 
 export default function PortalDashboard() {
   const { user } = useAuth();
-  const [data, setData] = useState({ client: null, projects: [], invoices: [], proposals: [], contracts: [], events: [], messages: [], forms: [], reviews: [] });
+  const [data, setData] = useState({ client: null, projects: [], invoices: [], proposals: [], contracts: [], events: [], messages: [], forms: [], reviews: [], steps: [] });
+  const [allSteps, setAllSteps] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
 
@@ -19,15 +20,16 @@ export default function PortalDashboard() {
       messagesAPI.thread(user?.client_id).catch(() => []),
       questionnairesAPI.listResponses().catch(() => []),
       reviewsAPI.list().catch(() => []),
+      sharedStepsAPI.list().catch(() => []),
     ])
-      .then(([clients, projects, invoices, proposals, contracts, events, messages, forms, reviews]) => {
-        setData({ client: clients[0] || null, projects, invoices, proposals, contracts, events, messages, forms, reviews });
+      .then(([clients, projects, invoices, proposals, contracts, events, messages, forms, reviews, steps]) => {
+        setData({ client: clients[0] || null, projects, invoices, proposals, contracts, events, messages, forms, reviews, steps });
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoaded(true));
   }, [user?.client_id]);
 
-  const { client, projects, invoices, proposals, contracts, events, messages, forms, reviews } = data;
+  const { client, projects, invoices, proposals, contracts, events, messages, forms, reviews, steps } = data;
   const firstName = String(user?.name || '').split(' ')[0];
 
   const todo = useMemo(() => {
@@ -79,6 +81,26 @@ export default function PortalDashboard() {
 
         {error && <div className="form-error" style={{ marginTop: 20 }}>{error}</div>}
 
+        {steps.length > 0 && (
+          <section className="section" aria-labelledby="steps-h">
+            <div className="section-h">
+              <h2 id="steps-h" className="h-section">Your next steps</h2>
+              {steps.length > 1 && <button type="button" className="link" style={{ background: 'none', border: 'none', cursor: 'pointer', font: 'inherit' }} onClick={() => setAllSteps((v) => !v)}>{allSteps ? 'Show latest' : `Earlier updates (${steps.length - 1})`}</button>}
+            </div>
+            <div className="panel">
+              <ol className="steps-list">
+                {(allSteps ? steps : steps.slice(0, 1)).map((st) => (
+                  <li key={st.id} className="steps-item">
+                    <div className="row-sub">{formatDate(st.date, { day: 'numeric', month: 'long', year: 'numeric' })}{st.title ? `, ${st.title}` : ''}</div>
+                    <p>{st.next_steps}</p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </section>
+        )}
+
+        {(projects.length > 0 || steps.length === 0) && (
         <section className="section" aria-labelledby="pp-h">
           <div className="section-h">
             <h2 id="pp-h" className="h-section">Where your project is</h2>
@@ -105,6 +127,7 @@ export default function PortalDashboard() {
             ) : <div className="empty">{loaded ? 'Your studio hasn’t shared a project here yet.' : 'Loading…'}</div>}
           </div>
         </section>
+        )}
 
         <div className="split even section">
           <section className="panel" aria-labelledby="todo-h">

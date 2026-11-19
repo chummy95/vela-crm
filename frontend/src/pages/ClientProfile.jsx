@@ -5,6 +5,7 @@ import Pill from '../components/Pill';
 import Icon from '../components/Icon';
 import ClientMark from '../components/ClientMark';
 import ClientForm, { clientToForm } from '../components/ClientForm';
+import ClientRecords from '../components/ClientRecords';
 import { JourneyRail } from '../components/ProjectJourney';
 import { useAuth } from '../hooks/useAuth';
 import { useQuestionnaireAlerts } from '../hooks/useQuestionnaireAlerts';
@@ -264,6 +265,8 @@ export default function ClientProfile() {
                       )}
                     </div>
                   </section>
+
+                  <ClientRecords client={client} />
 
                   <section className="section" aria-labelledby="inv-h">
                     <div className="section-h">

@@ -147,6 +147,14 @@ db.comments = {
   ],
 };
 
+// Client records (notes, next steps, progress photos) for the demo.
+const ymd = (offset) => iso(day(offset)).slice(0, 10);
+db.client_notes = [
+  { id: 'cn1', user_id: 'demo', client_id: 'c1', client_name: 'Maison Noor', date: ymd(-21), kind: 'consultation', title: 'First consultation', notes: 'Combination skin, congestion on chin and jawline. Mild post-inflammatory pigmentation on both cheeks. Uses a foaming cleanser twice a day; no SPF most days.', treatment: 'Skin analysis. Recommended a course of 4 gentle peels, 3 weeks apart.', next_steps: 'Start SPF 50 every morning, even indoors.\nSwap to a gentle cream cleanser.\nStop retinol 5 days before your first peel.', share_next_steps: true, shared: true, photos: [], created_at: iso(day(-21)), updated_at: iso(day(-21)) },
+  { id: 'cn2', user_id: 'demo', client_id: 'c1', client_name: 'Maison Noor', date: ymd(-7), kind: 'treatment', title: 'Peel 1 of 4', notes: 'Tolerated well, light tingling. Slight redness on left cheek settled after 10 minutes.', treatment: 'Mandelic 30%, 3 minutes. LED red light, 15 minutes.', next_steps: 'No exfoliants or retinol for 7 days.\nKeep skin moisturised and wear SPF.\nNext peel booked in 3 weeks.', share_next_steps: true, shared: true, photos: [], created_at: iso(day(-7)), updated_at: iso(day(-7)) },
+];
+db.shared_steps = db.client_notes.filter((n) => n.shared).map((n) => ({ id: n.id, user_id: 'demo', client_id: n.client_id, note_id: n.id, date: n.date, title: n.title, next_steps: n.next_steps, shared_at: n.updated_at }));
+
 const listeners = new Set();
 function emitResponses() { listeners.forEach((fn) => fn(JSON.parse(JSON.stringify(db.questionnaire_responses)))); }
 
@@ -304,6 +312,46 @@ export const ownerAPI = {
       { uid: 'demo-studio', name: 'Mayaa', studio: 'Creative Mayaa Studio', email: 'creativemayaa@gmail.com', created_at: d(26), last_seen: d(0), clients: 5, projects: 3, owner: true },
     ]);
   },
+};
+
+function syncDemoSteps(row) {
+  db.shared_steps = db.shared_steps.filter((s) => s.id !== row.id);
+  row.shared = Boolean(row.share_next_steps && String(row.next_steps || '').trim());
+  if (row.shared) db.shared_steps.unshift({ id: row.id, user_id: 'demo', client_id: row.client_id, note_id: row.id, date: row.date, title: row.title, next_steps: row.next_steps, shared_at: new Date().toISOString() });
+}
+
+export const recordsAPI = {
+  kinds: ['consultation', 'treatment', 'follow_up', 'note'],
+  async listForClient(clientId) {
+    return delay(db.client_notes.filter((n) => n.client_id === clientId).sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at)));
+  },
+  async create(clientId, body) {
+    const client = byId('clients', clientId);
+    const row = { id: id(), user_id: 'demo', client_id: clientId, client_name: client?.name || '', photos: [], ...body, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    syncDemoSteps(row);
+    db.client_notes.unshift(row);
+    return delay({ ...row, notified: row.shared && client?.portal_user_id ? { sent: true, to: client.portal_email } : null });
+  },
+  async update(rid, body) {
+    const row = byId('client_notes', rid);
+    const wasShared = row.shared; const before = row.next_steps;
+    Object.assign(row, body, { updated_at: new Date().toISOString() });
+    syncDemoSteps(row);
+    const client = byId('clients', row.client_id);
+    return delay({ ...row, notified: row.shared && (!wasShared || before !== row.next_steps) && client?.portal_user_id ? { sent: true, to: client.portal_email } : null });
+  },
+  async remove(rid) { db.client_notes = db.client_notes.filter((n) => n.id !== rid); db.shared_steps = db.shared_steps.filter((s) => s.id !== rid); return delay({ ok: true }); },
+  async uploadPhotos(clientId, files, { label = '', takenAt = '', onProgress } = {}) {
+    const list = Array.from(files || []).filter((f) => /^image\//.test(f.type));
+    if (!list.length) throw new Error('Choose photos (JPG, PNG or HEIC).');
+    onProgress?.(50); await new Promise((r) => setTimeout(r, 120)); onProgress?.(100);
+    return list.map((f) => ({ name: f.name, url: URL.createObjectURL(f), pathname: '', type: f.type, size: f.size, label, taken_at: takenAt || new Date().toISOString().slice(0, 10), kind: 'file' }));
+  },
+  async photoLinks(rid, urls) { return Object.fromEntries((urls || []).map((u) => [u, u])); },
+};
+
+export const sharedStepsAPI = {
+  async list() { return delay(visible('shared_steps').sort((a, b) => b.date.localeCompare(a.date))); },
 };
 
 export const paymentsAPI = {

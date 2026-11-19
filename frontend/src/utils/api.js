@@ -536,7 +536,166 @@ export const clientsAPI = {
   },
 
   async remove(id) {
+    const session = await requireStudioSession();
+    await getAccessibleDoc('clients', id, session);
+    // A client's records (notes, photos list, shared next steps) go with them.
+    const uid = session.firebaseUser.uid;
+    const [notes, steps] = await Promise.all([
+      getDocs(query(collection(db, 'client_notes'), where('user_id', '==', uid), where('client_id', '==', id))).catch(() => null),
+      getDocs(query(collection(db, 'shared_steps'), where('user_id', '==', uid), where('client_id', '==', id))).catch(() => null),
+    ]);
+    await Promise.all([...(notes?.docs || []), ...(steps?.docs || [])].map((d) => deleteDoc(d.ref).catch(() => {})));
     return deleteStudioDoc('clients', id);
+  },
+};
+
+// ── Client records ───────────────────────────────────────────────
+// A dated timeline on each client: private notes (what was discussed, what was done), next steps,
+// and progress photos. Notes and photos are private to the studio. When the studio chooses to show
+// the next steps to the client, a copy of just those (date, title, next steps) is kept in
+// shared_steps, which is the only part the client can read.
+const RECORD_KINDS = ['consultation', 'treatment', 'follow_up', 'note'];
+
+function cleanPhoto(photo) {
+  return {
+    name: text(photo.name).slice(0, 160),
+    url: text(photo.url),
+    pathname: text(photo.pathname),
+    type: text(photo.type),
+    size: Number(photo.size) || 0,
+    label: text(photo.label).slice(0, 120),
+    taken_at: text(photo.taken_at) || today(),
+    kind: 'file',
+  };
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function syncSharedSteps(id, record, wasShared) {
+  const share = Boolean(record.share_next_steps) && Boolean(text(record.next_steps));
+  if (share) {
+    const stamp = now();
+    await setDoc(doc(db, 'shared_steps', id), {
+      user_id: record.user_id,
+      client_id: record.client_id,
+      note_id: id,
+      date: record.date,
+      title: record.title || '',
+      next_steps: record.next_steps,
+      shared_at: stamp,
+    });
+    await updateDoc(doc(db, 'client_notes', id), { shared: true });
+    return true;
+  }
+  if (wasShared) {
+    await deleteDoc(doc(db, 'shared_steps', id)).catch(() => {});
+    await updateDoc(doc(db, 'client_notes', id), { shared: false });
+  }
+  return false;
+}
+
+export const recordsAPI = {
+  kinds: RECORD_KINDS,
+
+  async listForClient(clientId) {
+    const session = await requireStudioSession();
+    const snapshot = await getDocs(query(
+      collection(db, 'client_notes'),
+      where('user_id', '==', session.firebaseUser.uid),
+      where('client_id', '==', clientId),
+    ));
+    return snapshot.docs
+      .map((item) => ({ id: item.id, ...item.data() }))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.created_at).localeCompare(String(a.created_at)));
+  },
+
+  async create(clientId, body) {
+    const session = await requireStudioSession();
+    const client = await getStudioClient(clientId, session);
+    const record = {
+      user_id: session.firebaseUser.uid,
+      client_id: client.id,
+      client_name: client.name || '',
+      date: text(body.date) || today(),
+      kind: RECORD_KINDS.includes(body.kind) ? body.kind : 'note',
+      title: text(body.title).slice(0, 160),
+      notes: text(body.notes).slice(0, 20000),
+      treatment: text(body.treatment).slice(0, 5000),
+      next_steps: text(body.next_steps).slice(0, 5000),
+      share_next_steps: Boolean(body.share_next_steps),
+      photos: (body.photos || []).map(cleanPhoto).slice(0, 60),
+      shared: false,
+      created_at: now(),
+      updated_at: now(),
+    };
+    const reference = await addDoc(collection(db, 'client_notes'), record);
+    const shared = await syncSharedSteps(reference.id, record, false);
+    const notified = shared ? await notify('next_steps_shared', reference.id) : null;
+    return { id: reference.id, ...record, shared, notified };
+  },
+
+  async update(id, body) {
+    const session = await requireStudioSession();
+    const current = await getAccessibleDoc('client_notes', id, session);
+    const next = {
+      date: text(body.date) || current.date,
+      kind: RECORD_KINDS.includes(body.kind) ? body.kind : current.kind,
+      title: text(body.title).slice(0, 160),
+      notes: text(body.notes).slice(0, 20000),
+      treatment: text(body.treatment).slice(0, 5000),
+      next_steps: text(body.next_steps).slice(0, 5000),
+      share_next_steps: Boolean(body.share_next_steps),
+      photos: (body.photos || current.photos || []).map(cleanPhoto).slice(0, 60),
+      updated_at: now(),
+    };
+    await updateDoc(doc(db, 'client_notes', id), next);
+    const merged = { ...current, ...next };
+    const stepsChanged = next.next_steps !== current.next_steps || !current.shared;
+    const shared = await syncSharedSteps(id, merged, current.shared);
+    const notified = shared && stepsChanged ? await notify('next_steps_shared', id) : null;
+    return { ...merged, shared, notified };
+  },
+
+  async remove(id) {
+    const session = await requireStudioSession();
+    const current = await getAccessibleDoc('client_notes', id, session);
+    if (current.shared) await deleteDoc(doc(db, 'shared_steps', id)).catch(() => {});
+    await deleteDoc(doc(db, 'client_notes', id));
+    return { success: true };
+  },
+
+  // Uploads progress photos to private storage. Returns photo entries to add to a record.
+  async uploadPhotos(clientId, files, { label = '', takenAt = '', onProgress } = {}) {
+    const session = await requireStudioSession();
+    await getStudioClient(clientId, session);
+    const list = Array.from(files || []).filter((f) => /^image\//.test(f.type));
+    if (!list.length) throw new Error('Choose photos (JPG, PNG or HEIC).');
+    const out = [];
+    for (let i = 0; i < list.length; i += 1) {
+      const file = list[i];
+      if (file.size > 25 * 1024 * 1024) throw new Error(`${file.name} is over 25 MB.`);
+      const uploaded = await uploadsAPI.upload(file, {
+        folder: `clients/${clientId}/photos`,
+        onProgress: onProgress ? (pct) => onProgress(Math.round(((i + pct / 100) / list.length) * 100)) : undefined,
+      });
+      out.push(cleanPhoto({ ...uploaded, label, taken_at: takenAt || today() }));
+    }
+    return out;
+  },
+
+  // One-hour links to view a record's photos (studio only).
+  async photoLinks(id, urls) {
+    return filesAPI.links('', urls, { noteId: id });
+  },
+};
+
+// The next steps a studio has chosen to show the client (read by the client portal).
+export const sharedStepsAPI = {
+  async list() {
+    const rows = await listAccessibleDocs('shared_steps');
+    return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.shared_at).localeCompare(String(a.shared_at)));
   },
 };
 
@@ -1940,15 +2099,15 @@ export const uploadsAPI = {
 
 export const filesAPI = {
   // Short-lived links (one hour) for the private files on a review, or a proposal's document.
-  async links(reviewId, urls, { proposalId = '' } = {}) {
+  async links(reviewId, urls, { proposalId = '', noteId = '' } = {}) {
     const wanted = (urls || []).filter(Boolean);
-    if ((!reviewId && !proposalId) || !wanted.length) return {};
+    if ((!reviewId && !proposalId && !noteId) || !wanted.length) return {};
     await requireSession();
     const token = await auth.currentUser.getIdToken();
     const res = await fetch('/api/file', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(proposalId ? { proposalId, urls: wanted } : { reviewId, urls: wanted }),
+      body: JSON.stringify(noteId ? { noteId, urls: wanted } : proposalId ? { proposalId, urls: wanted } : { reviewId, urls: wanted }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Couldn’t open these files.');

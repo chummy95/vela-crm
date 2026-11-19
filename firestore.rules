@@ -142,6 +142,22 @@ service cloud.firestore {
       allow delete: if studioOwnsExistingRecord();
     }
 
+    // Client records: notes and progress photos are private to the studio.
+    match /client_notes/{docId} {
+      allow create: if studioOwnsIncomingRecord();
+      allow get, list: if studioOwnsExistingRecord();
+      allow update: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow delete: if studioOwnsExistingRecord();
+    }
+
+    // The next steps a studio chooses to show the client.
+    match /shared_steps/{docId} {
+      allow create: if studioOwnsIncomingRecord();
+      allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
+      allow update: if studioOwnsExistingRecord() && studioKeepsOwnership();
+      allow delete: if studioOwnsExistingRecord();
+    }
+
     match /contracts/{docId} {
       allow create: if studioOwnsIncomingRecord();
       allow get, list: if studioOwnsExistingRecord() || clientCanReadRecord();
